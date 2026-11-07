@@ -18,8 +18,8 @@
   
   <link rel="preload" href="/fonts/IBMPlexSansArabic-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/IBMPlexSans-Regular.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/fonts/fonts.css?v=3.2">
-  <link rel="stylesheet" href="/css/style.css?v=3.2">
+  <link rel="stylesheet" href="/fonts/fonts.css?v=3.3">
+  <link rel="stylesheet" href="/css/style.css?v=3.3">
 </head>
 <body>
   <div class="app-layout">
@@ -66,7 +66,7 @@
       <p id="audio-feedback" class="audio-feedback" role="status" hidden></p>
       <div class="autocue-container" id="autocue-container" aria-label="الترجمة المباشرة">
         <!-- منطقة التمرير العمودي المتدفق بنظام سطر بسطر -->
-        <div class="autocue-viewport" id="autocue-viewport" aria-label="ملقّن الترجمة العربية">
+        <div class="autocue-viewport" id="autocue-viewport" tabindex="0" aria-label="ملقّن الترجمة العربية">
           <div class="autocue-feed" id="autocue-feed">
             <div class="autocue-line active" id="autocue-placeholder">
               <div class="line-arabic" id="live-arabic">
@@ -78,6 +78,7 @@
             </div>
           </div>
         </div>
+        <button id="btn-follow-live" class="btn-follow-live" hidden>الرجوع للمباشر</button>
       </div>
 
     </main>
@@ -178,7 +179,7 @@
           <button id="btn-test-voice" class="btn-save">اختبار الصوت العربي</button>
           <div class="session-tools" aria-label="أدوات الجلسة">
             <button id="btn-font-toggle" class="sub-btn" title="تغيير حجم الخط"><span>A+ حجم النص</span></button>
-            <button id="btn-autocue-scroll" class="sub-btn active" aria-pressed="true">حركة الملقّن: مفعّلة</button>
+            <button id="btn-autocue-scroll" class="sub-btn active" aria-pressed="true">متابعة المباشر: مفعّلة</button>
             <button id="btn-open-transcript" class="sub-btn">سجل المحادثة</button>
             <button id="btn-clear-screen" class="sub-btn">مسح الشاشة</button>
             <button id="btn-share-room" class="tool-btn" title="مشاركة الغرفة مع العميل أو الهاتف">
@@ -213,12 +214,12 @@
   </div>
 
   <!-- Scripts -->
-  <script src="/js/ai-translator.js?v=3.2"></script>
-  <script src="/js/live-segments.js?v=3.2"></script>
-  <script src="/js/autocue.js?v=3.2"></script>
-  <script src="/js/speech-engine.js?v=3.2"></script>
-  <script src="/js/socket-client.js?v=3.2"></script>
-  <script src="/js/app.js?v=3.2"></script>
+  <script src="/js/ai-translator.js?v=3.3"></script>
+  <script src="/js/live-segments.js?v=3.3"></script>
+  <script src="/js/autocue.js?v=3.3"></script>
+  <script src="/js/speech-engine.js?v=3.3"></script>
+  <script src="/js/socket-client.js?v=3.3"></script>
+  <script src="/js/app.js?v=3.3"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});

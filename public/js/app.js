@@ -38,7 +38,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // عناصر ملقن النصوص (Autocue Elements)
   const autocueFeed = document.getElementById('autocue-feed');
-  const autocuePlayer = new AutocuePlayer(autocueFeed);
+  const btnFollowLive = document.getElementById('btn-follow-live');
+  const autocuePlayer = new AutocuePlayer(autocueFeed, document.getElementById('autocue-viewport'), enabled => {
+    autoScrollEnabled = enabled;
+    btnFollowLive.hidden = enabled;
+    btnAutocueScroll.setAttribute('aria-pressed', String(enabled));
+    btnAutocueScroll.textContent = enabled ? 'متابعة المباشر: مفعّلة' : 'متابعة المباشر: متوقفة';
+  });
   let autocuePlaceholder = document.getElementById('autocue-placeholder');
   const btnAutocueScroll = document.getElementById('btn-autocue-scroll');
   let autoScrollEnabled = true;
@@ -74,6 +80,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnClearScreen = document.getElementById('btn-clear-screen');
 
   roomDisplayName.textContent = `الغرفة: ${roomId}`;
+
+  btnFollowLive.addEventListener('click', () => {
+    autocuePlayer.setPaused(false);
+    autocuePlayer.setFollowing(true);
+  });
 
   // إنشاء الوحدات الأساسية
   const translator = new AITranslator();
@@ -331,6 +342,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentFontIndex = (currentFontIndex + 1) % fontSizes.length;
     const nextSize = fontSizes[currentFontIndex];
     autocueFeed.style.setProperty('--subtitle-size', `${nextSize}px`);
+    if (autocuePlayer.following) autocuePlayer.centerCurrent('auto');
     btnFontToggle.querySelector('span').textContent = `A (${nextSize}px)`;
   });
 
@@ -355,7 +367,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnAutocueScroll.setAttribute('aria-pressed', String(autoScrollEnabled));
       btnAutocueScroll.classList.toggle('active', autoScrollEnabled);
       autocuePlayer.setPaused(!autoScrollEnabled);
-      btnAutocueScroll.textContent = autoScrollEnabled ? 'حركة الملقّن: مفعّلة' : 'حركة الملقّن: متوقفة';
+      autocuePlayer.setFollowing(autoScrollEnabled);
+      btnAutocueScroll.textContent = autoScrollEnabled ? 'متابعة المباشر: مفعّلة' : 'متابعة المباشر: متوقفة';
     });
   }
 

@@ -24,7 +24,7 @@ test('offline shell resolves versioned script URLs from the precached asset', as
 
 test('cache cleanup preserves other applications and API requests bypass the worker', async () => {
   const deleted = [];
-  const events = worker({ keys: async () => ['turjuman-v2.2', 'turjuman-v3.2', 'other-app'], delete: async key => deleted.push(key) });
+  const events = worker({ keys: async () => ['turjuman-v2.2', 'turjuman-v3.3', 'other-app'], delete: async key => deleted.push(key) });
   let completion;
   events.activate({ waitUntil(promise) { completion = promise; } });
   await completion;

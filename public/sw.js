@@ -1,4 +1,4 @@
-const CACHE_NAME = 'turjuman-v3.2';
+const CACHE_NAME = 'turjuman-v3.3';
 const ASSETS = [
   '/',
   '/css/style.css',

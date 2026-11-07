@@ -9,8 +9,8 @@ A listener enables audio and hears each committed phrase once. Paused synthesis 
 Acceptance: simulated pause, missing voice, denied playback, mute, stop and resumed playback preserve ordering and surface errors. A live fallback endpoint returns playable Arabic audio. Physical iPhone speaker verification is reported separately.
 
 ### User Story 2 — Read an Arabic autocue (Priority: P1)
-The reading surface shows one short Arabic slide with a quiet vertical transition, with no English source text. Long translations become multiple timed slides, while the transcript remains in settings.
-Acceptance: each slide <=12 words (or <=110 characters for a long token), one visible slide, no horizontal overflow at 390px and 1280px, paused progression and reduced motion respected.
+The reading surface retains a continuous, scrollable Arabic track with no English source text. The current short phrase is fully opaque and automatically centered; previous phrases remain at 50% opacity. User scrolling suspends following without interrupting incoming text or audio. A contextual return-to-live control recenters the current phrase. Long translations remain split into timed phrases, while the transcript remains in settings.
+Acceptance: each slide <=12 words (or <=110 characters for a long token), retained previous phrases, one fully opaque current phrase, no horizontal overflow at 390px and 1280px, paused progression and reduced motion respected.
 
 ### User Story 3 — Translate continuous speech promptly (Priority: P1)
 Stable prefixes of continuous recognition are committed as bounded phrases before the browser finalizes a paragraph. Final results deliver the uncommitted tail without repeating earlier phrases.
@@ -29,7 +29,7 @@ Acceptance: a continuous recognition fixture commits a first phrase before final
 
 - All previous ordering, replay and room tests remain valid.
 - First committed phrase <=1.5s in the fixed continuous-input fixture where the old implementation waits for a final event at 8s.
-- One reading slide in the DOM after 100 incoming phrases.
+- After 100 displayed phrases all previous phrases remain scrollable; only the current phrase is fully opaque. Manual browsing does not force the viewport back to live.
 - Arabic audio endpoint returns nonempty audio/mpeg for a public test phrase.
 - Live microphone, iOS media restrictions and real network latency remain explicitly qualified until tested on that hardware.
 

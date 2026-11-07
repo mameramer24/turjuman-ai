@@ -27,3 +27,8 @@ Dependencies: T002 -> T004/T005 -> T006; T007 -> T008; T003 -> T009 -> T010; all
 Validation evidence: 40 passing tests, syntax for 22 JavaScript files, real HTTP/WebSocket/translation/MP3 smoke checks; browser audio start and end observed, Arabic-only single-slide view at 390px and 1280px with no horizontal overflow. Final screenshot capture became unavailable after local browser use was disabled in Work settings. Physical iPhone audio remains unverified.
 
 Published implementation commit: `5205a3c` on `origin/main`. GitHub push returned success.
+
+## Continuous scroll refinement
+- [x] T013 Retain prior phrases at 50% opacity and center the current phrase at 100% in public/js/autocue.js and public/css/style.css.
+- [x] T014 Suspend viewport follow on touch, wheel or keyboard browsing; restore with a contextual return-to-live control.
+- [x] T015 Verify history preservation, follow/resume and existing audio/ordering behavior with 41 tests and syntax checks. Visual recheck is unavailable because local browser use is disabled in Work settings.

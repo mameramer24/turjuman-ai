@@ -38,6 +38,7 @@ class Element {
   insertBefore(child) { this.children.unshift(child); }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(c => c !== this); }
   replaceChildren(...children) { this.children = []; for (const child of children) this.appendChild(child); }
+  getBoundingClientRect() { return { top: 0, height: 80 }; }
   scrollTo() {}
   setAttribute(name, value) { this.attributes[name] = value; }
   focus() {}

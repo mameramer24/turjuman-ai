@@ -1,7 +1,19 @@
-/** A single reading position; the full transcript lives outside the autocue. */
+/** A continuous Arabic reading track, centered on the current phrase. */
 class AutocuePlayer {
-  constructor(feed) {
+  constructor(feed, viewport = feed.parentElement, onFollowChange = () => {}) {
     this.feed = feed;
+    this.viewport = viewport;
+    this.onFollowChange = onFollowChange;
+    this.following = true;
+    this.previewLine = null;
+    this.activeLine = null;
+    const browseHistory = () => this.setFollowing(false);
+    viewport?.addEventListener('wheel', browseHistory, { passive: true });
+    viewport?.addEventListener('touchmove', browseHistory, { passive: true });
+    viewport?.addEventListener('pointerdown', browseHistory, { passive: true });
+    viewport?.addEventListener('keydown', event => {
+      if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) browseHistory();
+    });
     this.queue = [];
     this.current = null;
     this.timer = null;
@@ -36,8 +48,32 @@ class AutocuePlayer {
     arabic.className = 'line-arabic';
     arabic.textContent = text;
     line.appendChild(arabic);
-    this.feed.replaceChildren(line);
+    this.clearPreview();
+    if (preview) {
+      this.previewLine = line;
+    } else {
+      if (this.activeLine) this.activeLine.className = 'autocue-line past';
+      line.className = 'autocue-line current';
+      this.activeLine = line;
+    }
+    this.feed.appendChild(line);
     this.isPreview = preview;
+    if (this.following) this.centerCurrent();
+  }
+
+  centerCurrent(behavior = 'smooth') {
+    const line = this.previewLine || this.activeLine;
+    if (!line || !this.viewport) return;
+    const viewport = this.viewport;
+    const top = viewport.scrollTop + line.getBoundingClientRect().top - viewport.getBoundingClientRect().top
+      - (viewport.clientHeight - line.getBoundingClientRect().height) / 2;
+    viewport.scrollTo({ top: Math.max(0, top), behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : behavior });
+  }
+
+  setFollowing(enabled) {
+    this.following = enabled;
+    this.onFollowChange(enabled);
+    if (enabled) this.centerCurrent();
   }
 
   preview(text) {
@@ -76,7 +112,9 @@ class AutocuePlayer {
   }
 
   clearPreview() {
-    if (this.isPreview) { this.feed.replaceChildren(); this.isPreview = false; }
+    this.previewLine?.remove();
+    this.previewLine = null;
+    this.isPreview = false;
   }
 
   clear() {
@@ -84,6 +122,8 @@ class AutocuePlayer {
     this.queue = [];
     this.current = null;
     this.isPreview = false;
+    this.activeLine = null;
+    this.previewLine = null;
     this.feed.replaceChildren();
   }
 }

@@ -1,7 +1,7 @@
 # Implementation Plan: Live Arabic interpreter and autocue
 
 ## Summary
-Keep the existing Node/Express/vanilla JS stack and IBM fonts. Repair playback state and introduce a bounded phrase segmenter and one-slide player. Native Arabic synthesis is preferred; a fixed-host audio proxy provides fallback when device voices fail.
+Keep the existing Node/Express/vanilla JS stack and IBM fonts. Repair playback state and introduce a bounded phrase segmenter and scrollable reading track. Native Arabic synthesis is preferred; a fixed-host audio proxy provides fallback when device voices fail.
 
 ## Technical Context
 Node >=18, Express 4, ws 8; browser Web Speech and HTMLAudioElement. No new dependency, database or migration.
@@ -22,3 +22,5 @@ See research.md. Failing tests reproduce paused synthesis, swallowed speech erro
 
 ## Verification
 Node regression tests; same virtual-time recognition benchmark before/after; real translation/audio HTTP smoke; mobile/desktop screenshots; production push after checks under existing user authorization. Physical iPhone audio remains a hardware verification gap.
+
+User refinement: retain prior phrases at 50% opacity, center the current phrase at 100%, and suspend viewport following on manual input with contextual return-to-live. Regression tests cover retained rows and follow/resume. Browser verification of this refinement is unavailable while local browser use is disabled in Work settings.
