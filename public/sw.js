@@ -1,4 +1,4 @@
-const CACHE_NAME = 'turjuman-v1';
+const CACHE_NAME = 'turjuman-v2.1';
 const ASSETS = [
   '/',
   '/css/style.css',
@@ -11,8 +11,9 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );
 });
 
@@ -26,16 +27,25 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// استراتيجية Network-First لضمان ظهور التحديثات فوراً
 self.addEventListener('fetch', (event) => {
-  // للطلبات البرمجية مثل API لا نعتمد على الكاش
   if (event.request.url.includes('/api/') || event.request.url.includes('/ws')) {
     return;
   }
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return cached || fetch(event.request);
-    })
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        return caches.match(event.request);
+      })
   );
 });
-
