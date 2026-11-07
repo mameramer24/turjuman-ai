@@ -166,6 +166,52 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  // نظام الترجمة الصوتية الفورية المتدفقة (Streaming Voice Interpreter)
+  // ينطق العبارات في سماعة الأذن فورياً أثناء تحدث الضيف (بمجرد 3 كلمات) بدون أي انتظار لنهاية الجملة
+  let streamedWordsCount = 0;
+  let lastSpokenText = '';
+
+  async function processLiveStreamingVoice(text, isFinal = false) {
+    if (!speechEngine.voiceOutputEnabled) return;
+    if (!text || !text.trim()) return;
+
+    const words = text.trim().split(/\s+/);
+    const totalWords = words.length;
+
+    if (isFinal) {
+      if (totalWords > streamedWordsCount) {
+        const remaining = words.slice(streamedWordsCount).join(' ');
+        if (remaining.trim().length > 1) {
+          const trans = await translator.translate(remaining, 'en', 'ar');
+          if (trans.translated && trans.translated !== lastSpokenText) {
+            lastSpokenText = trans.translated;
+            speechEngine.speakArabic(trans.translated);
+          }
+        }
+      }
+      streamedWordsCount = 0;
+      return;
+    }
+
+    // أثناء الكلام الحي: ترجمة فورية ونطق كل 3 كلمات أو عند الفواصل
+    const newWords = totalWords - streamedWordsCount;
+    const currentSlice = words.slice(streamedWordsCount).join(' ');
+    const hasPunctuation = /[,.!?;]/.test(currentSlice) && newWords >= 2;
+
+    if (newWords >= 3 || hasPunctuation) {
+      const chunkWords = words.slice(streamedWordsCount, totalWords).join(' ');
+      streamedWordsCount = totalWords;
+
+      if (chunkWords.trim().length > 1) {
+        const trans = await translator.translate(chunkWords, 'en', 'ar');
+        if (trans.translated && trans.translated !== lastSpokenText) {
+          lastSpokenText = trans.translated;
+          speechEngine.speakArabic(trans.translated);
+        }
+      }
+    }
+  }
+
   // إعداد محرك الصوت
   const speechEngine = new SpeechEngine({
     onSpeakingState: (isSpeaking) => {
@@ -214,6 +260,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
           }
         }, 110);
+
+        // نطق صوتي فوري متدفق في السماعة فور خروج الكلمات من فم الضيف
+        processLiveStreamingVoice(result.interim, false);
       }
 
       // عند اكتمال الجملة (Final Line)
@@ -223,8 +272,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const res = await translator.translate(result.final, 'en', 'ar');
         renderAutocueLine(res.translated, result.final, false);
 
-        // نطق الترجمة بالعربية في السماعات إذا كان مفعلاً
-        speechEngine.speakArabic(res.translated);
+        // نطق الكلمات الأخيرة إن وجدت وتصفير المؤشر للجملة التالية
+        processLiveStreamingVoice(result.final, true);
 
         // إضافة للسجل
         addTranscriptRecord({
@@ -248,9 +297,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     onSubtitle: (data) => {
       renderAutocueLine(data.translated, data.original, data.isInterim);
 
-      if (!data.isInterim) {
-        speechEngine.speakArabic(data.translated);
-
+      if (data.isInterim) {
+        if (data.translated && data.translated !== lastSpokenText) {
+          lastSpokenText = data.translated;
+          speechEngine.speakArabic(data.translated);
+        }
+      } else {
         addTranscriptRecord({
           time: data.timestamp || new Date().toLocaleTimeString('ar-EG'),
           english: data.original,

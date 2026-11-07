@@ -60,7 +60,7 @@ class SpeechEngine {
   }
 
   /**
-   * تحويل النص العربي المترجم فورياً إلى صوت في سماعة أذن العميل
+   * تحويل النص العربي المترجم فورياً إلى صوت في سماعة أذن العميل بدون أي تأخير
    */
   speakArabic(text) {
     if (!this.voiceOutputEnabled || !text || !text.trim()) return;
@@ -68,10 +68,14 @@ class SpeechEngine {
 
     const trimmed = text.trim();
 
-    // إذا تراكمت جمل كثيرة في الطابور بسبب سرعة المتحدث، نختصر القديم لمنع التأخر الزمني
-    if (this.speechQueue.length >= 2) {
-      // دمج الجمل المتبقية مع بعضها
-      this.speechQueue = [this.speechQueue.join('. ') + '. ' + trimmed];
+    // فحص عدم تعليق المتصفح في النطق
+    if (!window.speechSynthesis.speaking && this.isSpeaking) {
+      this.isSpeaking = false;
+    }
+
+    // إضافة العبارة المتدفقة فورياً للطابور
+    if (this.speechQueue.length >= 4) {
+      this.speechQueue = [this.speechQueue.slice(0, 2).join('، '), trimmed];
     } else {
       this.speechQueue.push(trimmed);
     }
@@ -80,7 +84,17 @@ class SpeechEngine {
   }
 
   processSpeechQueue() {
-    if (this.isSpeaking || this.speechQueue.length === 0) return;
+    if (this.speechQueue.length === 0) {
+      this.isSpeaking = false;
+      this.onSpeakingState(false);
+      return;
+    }
+
+    // إذا كان المتصفح يتكلم حالياً ننتظر انتهاء العبارة الحالية
+    if (window.speechSynthesis.speaking) {
+      this.isSpeaking = true;
+      return;
+    }
 
     const nextText = this.speechQueue.shift();
     this.isSpeaking = true;
@@ -92,7 +106,7 @@ class SpeechEngine {
       utterance.voice = this.arabicVoice;
     }
 
-    // إذا كان هناك جمل تنتظر، نزيد السرعة قليلاً لملاحقة المتحدث في الاجتماع
+    // سرعة فورية متكيفة لمنع أي بطء أو تراكم
     const dynamicRate = this.speechQueue.length > 0 ? this.baseRate * 1.15 : this.baseRate;
     utterance.rate = Math.min(dynamicRate, 1.35);
     utterance.pitch = 1.0;
@@ -100,14 +114,15 @@ class SpeechEngine {
     utterance.onend = () => {
       this.isSpeaking = false;
       this.onSpeakingState(false);
-      this.processSpeechQueue();
+      // الانتقال الفوري للعبارة القادمة خلال 10ms فقط
+      setTimeout(() => this.processSpeechQueue(), 10);
     };
 
     utterance.onerror = (e) => {
       console.warn('TTS utterance error:', e);
       this.isSpeaking = false;
       this.onSpeakingState(false);
-      this.processSpeechQueue();
+      setTimeout(() => this.processSpeechQueue(), 10);
     };
 
     window.speechSynthesis.speak(utterance);
