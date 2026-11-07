@@ -20,7 +20,7 @@ async function join(room) {
 }
 
 async function main() {
-  for (const url of ['/', '/room/smoke-test', '/js/app.js?v=3.0', '/css/style.css?v=3.0', '/sw.js']) {
+  for (const url of ['/', '/room/smoke-test', '/js/app.js?v=3.2', '/css/style.css?v=3.2', '/js/live-segments.js', '/js/autocue.js', '/audio/unlock.wav', '/sw.js']) {
     assert.equal((await fetch(`${base}${url}`)).status, 200, url);
   }
   assert.equal((await fetch(`${base}/api/translate`, {
@@ -58,5 +58,12 @@ async function main() {
   const result = await translation.json();
   assert.match(result.translated, /[\u0600-\u06ff]/);
   console.log(`PASS: live English-to-Arabic provider (${result.engine})`);
+  const speech = await fetch(`${base}/api/speech`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'الصوت العربي يعمل الآن' })
+  });
+  assert.equal(speech.status, 200, 'Live Arabic speech fallback unavailable');
+  assert.match(speech.headers.get('content-type'), /^audio\/mpeg/);
+  assert.ok((await speech.arrayBuffer()).byteLength > 100);
+  console.log('PASS: live Arabic speech endpoint returns nonempty MP3 audio');
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

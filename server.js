@@ -20,8 +20,31 @@ app.get('/api/config', (req, res) => {
   res.json({
     hasGeminiKey: !!process.env.GEMINI_API_KEY,
     geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-    version: '3.0.0'
+    version: '3.2.0'
   });
+});
+
+// Fixed-host Arabic fallback for devices without a usable Arabic system voice.
+app.post('/api/speech', async (req, res) => {
+  const text = req.body?.text;
+  if (typeof text !== 'string' || !text.trim() || text.length > 180) {
+    return res.status(400).json({ error: 'Invalid speech text' });
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=ar&q=${encodeURIComponent(text.trim())}`;
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok || !response.headers.get('content-type')?.startsWith('audio/')) throw new Error('Speech unavailable');
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (!bytes.length || bytes.length > 1024 * 1024) throw new Error('Invalid speech response');
+    res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' });
+    res.send(bytes);
+  } catch (_) {
+    res.status(503).json({ error: 'Arabic speech temporarily unavailable' });
+  } finally {
+    clearTimeout(timer);
+  }
 });
 
 // ذاكرة تخزين مؤقت داخلية سريعة جداً (Memory Cache)

@@ -37,11 +37,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   const engineBadge = document.getElementById('engine-badge');
 
   // عناصر ملقن النصوص (Autocue Elements)
-  const autocueViewport = document.getElementById('autocue-viewport');
   const autocueFeed = document.getElementById('autocue-feed');
+  const autocuePlayer = new AutocuePlayer(autocueFeed);
   let autocuePlaceholder = document.getElementById('autocue-placeholder');
   const btnAutocueScroll = document.getElementById('btn-autocue-scroll');
   let autoScrollEnabled = true;
+  const audioFeedback = document.getElementById('audio-feedback');
+  const btnTestVoice = document.getElementById('btn-test-voice');
 
   // نوافذ Modals
   const shareModal = document.getElementById('share-modal');
@@ -76,7 +78,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // إنشاء الوحدات الأساسية
   const translator = new AITranslator();
   let transcriptHistory = [];
-  let interimDebounceTimer = null;
   let fontSizes = [22, 26, 30, 36];
   let currentFontIndex = 1;
 
@@ -128,33 +129,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   const segmentId = () => `${sourceId}:${segmentNumber}`;
 
   function renderAutocueLine(arabic, english, isInterim, id, revision = 0) {
-    let line = subtitleLines.get(id);
+    const line = subtitleLines.get(id);
     if (line && (line.final || revision < line.revision)) return false;
-    if (autocuePlaceholder) {
-      autocuePlaceholder.remove();
-      autocuePlaceholder = null;
-    }
-    if (!line) {
-      line = { element: document.createElement('div') };
-      subtitleLines.set(id, line);
-      autocueFeed.appendChild(line.element);
-    }
-    line.final = !isInterim;
-    line.revision = revision;
-    line.element.className = `autocue-line active${isInterim ? ' interim' : ''}`;
-    line.element.innerHTML = `
-      <div class="line-arabic">${escapeHtml(arabic)}</div>
-      <div class="line-english" lang="en" dir="ltr">${escapeHtml(english)}</div>
-    `;
-    // Keep old text readable and retain segment IDs to reject delayed replays.
-    if (subtitleLines.size > 300) {
-      const oldest = subtitleLines.keys().next().value;
-      subtitleLines.get(oldest).element.remove();
-      subtitleLines.delete(oldest);
-    }
-    if (autoScrollEnabled) {
-      autocueViewport.scrollTo({ top: autocueViewport.scrollHeight, behavior: 'auto' });
-    }
+    if (autocuePlaceholder) { autocuePlaceholder.remove(); autocuePlaceholder = null; }
+    subtitleLines.set(id, { final: !isInterim, revision });
+    if (isInterim) autocuePlayer.preview(arabic);
+    else autocuePlayer.enqueue(arabic);
+    if (subtitleLines.size > 300) subtitleLines.delete(subtitleLines.keys().next().value);
     return true;
   }
 
@@ -162,11 +143,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     sessionVersion++;
     draftRevision++;
     segmentNumber++;
-    clearTimeout(interimDebounceTimer);
     finalQueue = Promise.resolve();
+    autocuePlayer.clearPreview();
     for (const [id, line] of subtitleLines) {
       if (!line.final) {
-        line.element.remove();
         subtitleLines.delete(id);
       }
     }
@@ -181,8 +161,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function handleRecognitionResult(result) {
-    if (!speechEngine.isListening) return;
-    clearTimeout(interimDebounceTimer);
+    if (!speechEngine.isListening || !result.final) return finalQueue;
     const version = sessionVersion;
     const revision = ++draftRevision;
 
@@ -217,23 +196,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     }
 
-    if (result.interim) {
-      const id = segmentId();
-      interimDebounceTimer = setTimeout(async () => {
-        try {
-          const temp = await translator.translate(result.interim, 'en', 'ar');
-          await finalQueue;
-          if (version !== sessionVersion || revision !== draftRevision || !speechEngine.isListening || temp.engine === 'failed') return;
-          renderAutocueLine(temp.translated, result.interim, true, id, revision);
-          socketClient.broadcastSubtitle({
-            original: result.interim, translated: temp.translated,
-            isInterim: true, segmentId: id, revision
-          });
-        } catch (_) {
-          if (version === sessionVersion && revision === draftRevision) showSessionStatus('تعذرت ترجمة النص الأولي. بانتظار العبارة المكتملة.', true);
-        }
-      }, 180);
-    }
     return finalQueue;
   }
 
@@ -241,13 +203,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   const speechEngine = new SpeechEngine({
     onSpeakingState: (isSpeaking) => {
       btnToggleVoice.classList.toggle('speaking', isSpeaking);
+      if (isSpeaking && audioFeedback) { audioFeedback.hidden = false; audioFeedback.textContent = 'يُنطق الصوت العربي الآن'; }
+      else if (audioFeedback?.textContent === 'يُنطق الصوت العربي الآن') audioFeedback.hidden = true;
+    },
+    onSpeechError: (error) => {
+      if (audioFeedback) { audioFeedback.hidden = false; audioFeedback.textContent = error.message; }
+      updateVoiceControl();
     },
     onStatusChange: (status) => {
       if (status === 'listening') {
         btnMainListen.classList.add('listening');
         listenText.textContent = 'إيقاف الاستماع';
         soundWave.classList.add('active');
-        showSessionStatus('يستمع الآن · النص يتحدث تلقائياً والصوت بعد اكتمال العبارة');
+        showSessionStatus('يستمع الآن · يترجم العبارات أولاً بأول');
       } else {
         btnMainListen.classList.remove('listening');
         listenText.textContent = 'بدء الاستماع والترجمة';
@@ -329,26 +297,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // زر التحكم في الترجمة الصوتية (النطق بالعربية للموبايل)
-  btnToggleVoice.addEventListener('click', () => {
-    const newState = !speechEngine.voiceOutputEnabled;
-    speechEngine.setVoiceOutput(newState);
-    const voiceAction = newState ? 'كتم الترجمة الصوتية' : 'تشغيل الترجمة الصوتية';
-    btnToggleVoice.setAttribute('aria-label', voiceAction);
-    btnToggleVoice.title = voiceAction;
-    btnToggleVoice.setAttribute('aria-pressed', String(newState));
+  function updateVoiceControl() {
+    const enabled = speechEngine.voiceOutputEnabled;
+    const blocked = speechEngine.needsAudioGesture;
+    const action = blocked ? 'تفعيل الصوت العربي مجدداً' : enabled ? 'كتم الترجمة الصوتية' : 'تشغيل الترجمة الصوتية';
+    btnToggleVoice.setAttribute('aria-label', action);
+    btnToggleVoice.title = action;
+    btnToggleVoice.setAttribute('aria-pressed', String(enabled && !blocked));
+    btnToggleVoice.className = `voice-btn ${enabled && !blocked ? 'active' : 'muted'}`;
+    voiceIcon.textContent = blocked ? '🔈' : enabled ? '🔊' : '🔇';
+    btnToggleVoice.querySelector('strong').textContent = enabled && !blocked ? 'الترجمة الصوتية: مفعّلة' : 'اضغط لتشغيل الصوت العربي';
+    voiceStatusHint.textContent = enabled ? 'نطق العبارات العربية' : 'الصوت مكتوم';
+  }
 
-    if (newState) {
-      btnToggleVoice.className = 'voice-btn active';
-      voiceIcon.textContent = '🔊';
-      btnToggleVoice.querySelector('strong').textContent = 'الترجمة الصوتية: مفعّلة';
-      voiceStatusHint.textContent = 'تسمع الترجمة بصوت عربي فوري عبر السماعات';
-    } else {
-      btnToggleVoice.className = 'voice-btn muted';
-      voiceIcon.textContent = '🔇';
-      btnToggleVoice.querySelector('strong').textContent = 'الترجمة الصوتية: صامتة';
-      voiceStatusHint.textContent = 'عرض الترجمة كتابة فقط بدون نطق صوتي';
+  btnToggleVoice.addEventListener('click', () => {
+    if (audioFeedback) audioFeedback.hidden = true;
+    speechEngine.setVoiceOutput(speechEngine.needsAudioGesture || !speechEngine.voiceOutputEnabled);
+    updateVoiceControl();
+    if (!speechEngine.voiceOutputEnabled && audioFeedback) {
+      audioFeedback.hidden = false;
+      audioFeedback.textContent = 'الصوت مكتوم · اضغط السماعة لتفعيله';
     }
+  });
+  btnTestVoice?.addEventListener('click', () => {
+    speechEngine.cancelSpeech();
+    speechEngine.setVoiceOutput(true);
+    updateVoiceControl();
+    speechEngine.speakArabic('الصوت العربي يعمل الآن');
   });
 
   // تكبير الخط
@@ -363,6 +338,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnClearScreen.addEventListener('click', () => {
     invalidatePendingTranslations();
     if (autocueFeed) {
+      autocuePlayer.clear();
       autocueFeed.innerHTML = `
         <div class="autocue-line active" id="autocue-placeholder">
           <div class="line-arabic">تم مسح الشاشة. بانتظار تحدث الضيف...</div>
@@ -378,7 +354,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       autoScrollEnabled = !autoScrollEnabled;
       btnAutocueScroll.setAttribute('aria-pressed', String(autoScrollEnabled));
       btnAutocueScroll.classList.toggle('active', autoScrollEnabled);
-      btnAutocueScroll.textContent = autoScrollEnabled ? 'تمرير تلقائي ✓' : 'تمرير يدوي ⏸';
+      autocuePlayer.setPaused(!autoScrollEnabled);
+      btnAutocueScroll.textContent = autoScrollEnabled ? 'حركة الملقّن: مفعّلة' : 'حركة الملقّن: متوقفة';
     });
   }
 

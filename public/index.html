@@ -18,8 +18,8 @@
   
   <link rel="preload" href="/fonts/IBMPlexSansArabic-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/IBMPlexSans-Regular.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/fonts/fonts.css?v=3.1">
-  <link rel="stylesheet" href="/css/style.css?v=3.1">
+  <link rel="stylesheet" href="/fonts/fonts.css?v=3.2">
+  <link rel="stylesheet" href="/css/style.css?v=3.2">
 </head>
 <body>
   <div class="app-layout">
@@ -57,21 +57,22 @@
     <!-- بطاقة العرض المباشر (الشاشة الرئيسية للترجمة) -->
     <main class="live-viewport">
       <div class="reading-status">
-        <span class="direction-tag"><span lang="en" dir="ltr">English</span><span aria-hidden="true">←</span><span>العربية</span></span>
+        <span class="direction-tag">ملقّن عربي مباشر</span>
         <div class="sound-wave" id="sound-wave" aria-hidden="true">
           <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
         </div>
       </div>
       <p id="session-status" class="session-status" role="status">اضغط بدء الاستماع لالتقاط الكلام من المايك.</p>
+      <p id="audio-feedback" class="audio-feedback" role="status" hidden></p>
       <div class="autocue-container" id="autocue-container" aria-label="الترجمة المباشرة">
         <!-- منطقة التمرير العمودي المتدفق بنظام سطر بسطر -->
-        <div class="autocue-viewport" id="autocue-viewport">
+        <div class="autocue-viewport" id="autocue-viewport" aria-label="ملقّن الترجمة العربية">
           <div class="autocue-feed" id="autocue-feed">
             <div class="autocue-line active" id="autocue-placeholder">
               <div class="line-arabic" id="live-arabic">
                 ترجمتك تظهر هنا
               </div>
-              <div class="line-english" id="live-english" lang="ar" dir="rtl">
+              <div class="autocue-hint">
                 ابدأ الاستماع، واستخدم سماعات الأذن لسماع الترجمة دون التقاطها بالمايك.
               </div>
             </div>
@@ -89,7 +90,7 @@
         </button>
         <button id="btn-toggle-voice" class="voice-btn active" aria-label="كتم الترجمة الصوتية" aria-pressed="true" title="كتم الترجمة الصوتية">
           <span class="voice-icon" id="voice-icon" aria-hidden="true">🔊</span>
-          <span class="visually-hidden"><strong>الترجمة الصوتية: مفعّلة</strong><small id="voice-status-hint">النطق بعد اكتمال العبارة</small></span>
+          <span class="visually-hidden"><strong>الترجمة الصوتية: مفعّلة</strong><small id="voice-status-hint">نطق العبارات العربية أولاً بأول</small></span>
         </button>
       </div>
     </footer>
@@ -173,10 +174,11 @@
             </select>
           </div>
 
-          <p class="hint-text">النص الأولي يتحدث أثناء الكلام. تُنطق كل عبارة مكتملة مرة واحدة. استخدم سماعات الأذن لتجنب رجوع الصوت للمايك.</p>
+          <p class="hint-text">تُترجم العبارات المستقرة وتُنطق أولاً بأول. الصوت العربي الاحتياطي يحتاج الإنترنت. استخدم سماعات الأذن لتجنب رجوع الصوت للمايك.</p>
+          <button id="btn-test-voice" class="btn-save">اختبار الصوت العربي</button>
           <div class="session-tools" aria-label="أدوات الجلسة">
             <button id="btn-font-toggle" class="sub-btn" title="تغيير حجم الخط"><span>A+ حجم النص</span></button>
-            <button id="btn-autocue-scroll" class="sub-btn active" aria-pressed="true">تمرير تلقائي ✓</button>
+            <button id="btn-autocue-scroll" class="sub-btn active" aria-pressed="true">حركة الملقّن: مفعّلة</button>
             <button id="btn-open-transcript" class="sub-btn">سجل المحادثة</button>
             <button id="btn-clear-screen" class="sub-btn">مسح الشاشة</button>
             <button id="btn-share-room" class="tool-btn" title="مشاركة الغرفة مع العميل أو الهاتف">
@@ -211,10 +213,12 @@
   </div>
 
   <!-- Scripts -->
-  <script src="/js/ai-translator.js?v=3.0"></script>
-  <script src="/js/speech-engine.js?v=3.0"></script>
-  <script src="/js/socket-client.js?v=3.0"></script>
-  <script src="/js/app.js?v=3.0"></script>
+  <script src="/js/ai-translator.js?v=3.2"></script>
+  <script src="/js/live-segments.js?v=3.2"></script>
+  <script src="/js/autocue.js?v=3.2"></script>
+  <script src="/js/speech-engine.js?v=3.2"></script>
+  <script src="/js/socket-client.js?v=3.2"></script>
+  <script src="/js/app.js?v=3.2"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});

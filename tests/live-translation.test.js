@@ -37,6 +37,7 @@ class Element {
   appendChild(child) { this.children.push(child); child.parent = this; return child; }
   insertBefore(child) { this.children.unshift(child); }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(c => c !== this); }
+  replaceChildren(...children) { this.children = []; for (const child of children) this.appendChild(child); }
   scrollTo() {}
   setAttribute(name, value) { this.attributes[name] = value; }
   focus() {}
@@ -50,7 +51,7 @@ function appHarness(translate = async text => ({ translated: `عربي: ${text}`
   let ready, engine, socket;
   const storage = new Map();
   const context = {
-    console, setTimeout, clearTimeout, URLSearchParams, URL, Blob,
+    console, setTimeout: (fn, ms) => { const timer = setTimeout(fn, ms); timer.unref(); return timer; }, clearTimeout, URLSearchParams, URL, Blob,
     localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
     navigator: { userAgent: 'test' },
     window: { navigator: {}, location: { pathname: '/room/test', search: '', origin: 'http://localhost' }, addEventListener() {}, matchMedia: () => ({ matches: false }) },
@@ -69,6 +70,8 @@ function appHarness(translate = async text => ({ translated: `عربي: ${text}`
       broadcastSubtitle(data) { broadcasts.push(data); }
     }
   };
+  vm.runInNewContext(source('public/js/autocue.js'), context);
+  context.AutocuePlayer = context.window.AutocuePlayer;
   vm.runInNewContext(source('public/js/app.js'), context);
   ready();
   return { engine, socket, elements, spoken, broadcasts };
@@ -171,7 +174,9 @@ test('recognition does not emit an already-finalized result index twice', () => 
   const results = [];
   class Recognition { start() {} stop() {} }
   const window = { SpeechRecognition: Recognition };
-  vm.runInNewContext(source('public/js/speech-engine.js'), { window, navigator: {}, console, setTimeout });
+  const engineContext = { window, navigator: {}, console, setTimeout, clearTimeout };
+  vm.runInNewContext(source('public/js/live-segments.js'), engineContext);
+  vm.runInNewContext(source('public/js/speech-engine.js'), engineContext);
   const engine = new window.SpeechEngine({ onResult: result => results.push(result) });
   engine.setupRecognition();
   engine.isListening = true;
@@ -193,10 +198,10 @@ test('intentional repetition in separate speech segments is preserved', async ()
 
 test('speech queue retains every phrase under load and cancels old callbacks on stop', async () => {
   const spoken = [];
-  const synthesis = { getVoices: () => [], cancel() { this.speaking = false; }, speak(u) { this.speaking = true; spoken.push(u); } };
+  const synthesis = { getVoices: () => [{ lang: 'ar-SA', name: 'Arabic' }], cancel() { this.speaking = false; }, speak(u) { this.speaking = true; spoken.push(u); } };
   const window = { speechSynthesis: synthesis };
   vm.runInNewContext(source('public/js/speech-engine.js'), {
-    window, navigator: {}, console, setTimeout,
+    window, navigator: {}, console, setTimeout, clearTimeout,
     SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } }
   });
   const engine = new window.SpeechEngine();
@@ -215,6 +220,7 @@ test('speech queue retains every phrase under load and cancels old callbacks on 
   await delay(15);
   assert.equal(spoken.at(-1).text, 'New session');
   assert.equal(spoken.filter(u => u.text === 'New session').length, 1);
+  engine.stop();
 });
 
 test('extension observes source captions once, excluding nested duplicates and its own UI', async () => {
@@ -237,4 +243,50 @@ test('extension observes source captions once, excluding nested duplicates and i
   assert.deepEqual(translated, ['Welcome to our meeting']);
   assert.equal(emitted.length, 1);
   observer.stop();
+});
+
+test('paused speech synthesis resumes and speaking state reflects actual audio start', () => {
+  let resumed = 0, utterance;
+  const states = [];
+  const synthesis = { paused: true, getVoices: () => [{ lang: 'ar-SA', name: 'Arabic' }],
+    resume() { resumed++; this.paused = false; }, cancel() {}, speak(value) { utterance = value; } };
+  const window = { speechSynthesis: synthesis };
+  vm.runInNewContext(source('public/js/speech-engine.js'), { window, navigator: {}, console, setTimeout, clearTimeout,
+    SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } } });
+  const engine = new window.SpeechEngine({ onSpeakingState: active => states.push(active) });
+  engine.speakArabic('مرحبا بكم');
+  assert.equal(resumed, 1, 'paused browsers silently queue speech forever');
+  assert.equal(states.includes(true), false, 'queued speech is not yet audible');
+  utterance.onstart();
+  assert.equal(states.at(-1), true);
+  engine.stop();
+});
+
+test('blocked speech reports a recoverable audio error instead of silently dropping it', () => {
+  let utterance;
+  const errors = [];
+  const window = { speechSynthesis: { getVoices: () => [{ lang: 'ar-SA', name: 'Arabic' }], resume() {}, cancel() {}, speak(value) { utterance = value; } } };
+  vm.runInNewContext(source('public/js/speech-engine.js'), { window, navigator: {}, console, setTimeout, clearTimeout,
+    SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } } });
+  const engine = new window.SpeechEngine({ onSpeechError: error => errors.push(error) });
+  engine.speakArabic('هذه ترجمة عربية');
+  utterance.onerror({ error: 'not-allowed' });
+  assert.equal(errors.length, 1);
+  assert.equal(engine.needsAudioGesture, true);
+});
+
+test('live display contains Arabic only rather than an English paragraph', async () => {
+  const h = appHarness();
+  h.socket.options.onSubtitle({ original: 'This English paragraph must stay in the transcript.', translated: 'هذه ترجمة عربية.', isInterim: false, segmentId: 'arabic-only:1', revision: 1 });
+  const displayed = h.elements.get('autocue-feed').children.map(line => line.children.map(child => child.textContent).join('')).join('');
+  assert.equal(displayed.includes('This English'), false);
+  assert.equal(displayed.includes('هذه ترجمة عربية.'), true);
+});
+
+test('the voice button recovers blocked playback instead of muting an already enabled engine', async () => {
+  const h = appHarness();
+  h.engine.needsAudioGesture = true;
+  h.engine.options.onSpeechError({ message: 'اضغط السماعة لتفعيل الصوت' });
+  await h.elements.get('btn-toggle-voice').click();
+  assert.equal(h.engine.voiceOutputEnabled, true);
 });

@@ -12,7 +12,7 @@ function serverHarness(fetch) {
   const app = { use() {}, get() {}, post: (url, fn) => routes.set(url, fn) };
   const express = Object.assign(() => app, { json() {}, static() {} });
   vm.runInNewContext(source('server.js'), {
-    fetch, AbortController, setTimeout, clearTimeout, console: { log() {}, warn() {} }, process: { env: {} }, __dirname: root,
+    fetch, Buffer, AbortController, setTimeout, clearTimeout, console: { log() {}, warn() {} }, process: { env: {} }, __dirname: root,
     require(name) {
       if (name === 'dotenv') return { config() {} };
       if (name === 'express') return express;
@@ -22,9 +22,9 @@ function serverHarness(fetch) {
       return require(name);
     }
   });
-  return async body => {
-    const res = { code: 200, status(code) { this.code = code; return this; }, json(data) { this.data = data; return this; } };
-    await routes.get('/api/translate')({ body }, res);
+  return async (body, route = '/api/translate') => {
+    const res = { code: 200, status(code) { this.code = code; return this; }, json(data) { this.data = data; return this; }, set(headers) { this.headers = headers; }, send(data) { this.data = data; } };
+    await routes.get(route)({ body }, res);
     return res;
   };
 }
@@ -115,4 +115,27 @@ test('extension translation failure stays retryable and does not return English 
   available = true;
   assert.equal(await translator.translate('Hello'), 'مرحبا');
   assert.equal(requests, 2);
+});
+
+
+test('speech endpoint validates input before fetching and returns bounded noncached audio', async () => {
+  let calls = 0;
+  const request = serverHarness(async url => {
+    calls++;
+    assert.ok(url.startsWith('https://translate.google.com/translate_tts?'));
+    assert.ok(url.includes('tl=ar'));
+    return { ok: true, headers: { get: () => 'audio/mpeg' }, arrayBuffer: async () => Buffer.from('ID3audio') };
+  });
+  for (const body of [null, { text: '' }, { text: 10 }, { text: 'ا'.repeat(181) }]) assert.equal((await request(body, '/api/speech')).code, 400);
+  assert.equal(calls, 0);
+  const audio = await request({ text: 'مرحبا بكم' }, '/api/speech');
+  assert.equal(audio.code, 200);
+  assert.equal(audio.headers['Content-Type'], 'audio/mpeg');
+  assert.equal(audio.headers['Cache-Control'], 'no-store');
+  assert.ok(Buffer.isBuffer(audio.data));
+});
+
+test('speech endpoint rejects upstream errors and nonaudio responses', async () => {
+  const request = serverHarness(async () => ({ ok: true, headers: { get: () => 'text/html' } }));
+  assert.equal((await request({ text: 'مرحبا' }, '/api/speech')).code, 503);
 });

@@ -9,6 +9,7 @@ class SpeechEngine {
     this.onStatusChange = options.onStatusChange || (() => {});
     this.onAudioActivity = options.onAudioActivity || (() => {});
     this.onSpeakingState = options.onSpeakingState || (() => {});
+    this.onSpeechError = options.onSpeechError || (() => {});
     
     this.isListening = false;
     this.voiceOutputEnabled = true; // الترجمة الصوتية الفورية في السماعة مفعلة افتراضياً
@@ -18,6 +19,11 @@ class SpeechEngine {
     this.speechQueue = [];
     this.isSpeaking = false;
     this.activeUtterance = null;
+    this.activeSpeech = null;
+    this.needsAudioGesture = false;
+    this.preferRemoteSpeech = false;
+    this.audio = typeof Audio !== 'undefined' ? new Audio('/audio/unlock.wav') : null;
+    if (this.audio) this.audio.preload = 'auto';
     this.speechGeneration = 0;
     this.starting = false;
     this.terminalError = null;
@@ -56,51 +62,183 @@ class SpeechEngine {
   setVoiceOutput(enabled) {
     this.voiceOutputEnabled = enabled;
     if (!enabled) this.cancelSpeech();
-    else if ('speechSynthesis' in window) {
-      // This user gesture unlocks audio on mobile.
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+    else {
+      this.prepareAudio();
+      this.processSpeechQueue();
+    }
+  }
+
+  prepareAudio() {
+    this.needsAudioGesture = false;
+    const synth = window.speechSynthesis;
+    if (synth) {
+      synth.resume?.();
+      if (!this.activeSpeech && this.arabicVoice && !this.preferRemoteSpeech) {
+        // A nonempty utterance is required to establish a speech session on iOS.
+        const prime = new SpeechSynthesisUtterance('جاهز');
+        prime.lang = this.arabicVoice.lang;
+        prime.voice = this.arabicVoice;
+        prime.volume = 0;
+        this.unlockUtterance = prime;
+        prime.onend = () => { this.unlockUtterance = null; };
+        synth.speak(prime);
+      }
+    }
+    if (this.audio && !this.activeSpeech) {
+      this.audio.src = '/audio/unlock.wav';
+      this.audio.volume = 0;
+      this.audio.play().then(() => {
+        if (!this.activeSpeech) { this.audio.pause(); this.audio.currentTime = 0; }
+      }).catch(() => {});
     }
   }
 
   cancelSpeech() {
     this.speechGeneration++;
-    this.speechQueue = [];
+    const job = this.activeSpeech;
+    this.activeSpeech = null;
     this.activeUtterance = null;
-    this.isSpeaking = false;
+    this.speechQueue = [];
+    clearTimeout(job?.timer);
+    job?.controller?.abort();
+    if (job?.url) URL.revokeObjectURL(job.url);
+    if (this.audio) {
+      this.audio.onplaying = this.audio.onended = this.audio.onerror = null;
+      this.audio.pause();
+    }
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    this.isSpeaking = false;
     this.onSpeakingState(false);
   }
 
   speakArabic(text) {
-    if (!this.voiceOutputEnabled || !text?.trim() || !('speechSynthesis' in window)) return;
-    this.speechQueue.push(text.trim());
+    if (!this.voiceOutputEnabled || !text?.trim()) return;
+    let phrase = '';
+    for (const token of text.trim().split(/\s+/)) {
+      for (let offset = 0; offset < token.length; offset += 180) {
+        const word = token.slice(offset, offset + 180);
+        if (phrase && phrase.length + word.length + 1 > 180) { this.speechQueue.push(phrase); phrase = ''; }
+        phrase += (phrase ? ' ' : '') + word;
+      }
+    }
+    if (phrase) this.speechQueue.push(phrase);
     this.processSpeechQueue();
   }
 
-  processSpeechQueue() {
-    if (!this.voiceOutputEnabled || this.activeUtterance || !this.speechQueue.length) return;
-    const nextText = this.speechQueue.shift();
-    const generation = this.speechGeneration;
-    const utterance = new SpeechSynthesisUtterance(nextText);
-    this.activeUtterance = utterance;
+  isCurrentSpeech(job) {
+    return this.activeSpeech === job && job.generation === this.speechGeneration;
+  }
+
+  speechStarted(job) {
+    if (!this.isCurrentSpeech(job)) return;
+    clearTimeout(job.timer);
+    job.started = true;
     this.isSpeaking = true;
-    this.onSpeakingState(true, nextText);
-    utterance.lang = 'ar-SA';
-    if (this.arabicVoice) utterance.voice = this.arabicVoice;
-    utterance.rate = Math.min(this.baseRate * (this.speechQueue.length ? 1.1 : 1), 1.4);
-    utterance.pitch = 1;
-    const finish = () => {
-      if (generation !== this.speechGeneration || this.activeUtterance !== utterance) return;
+    this.onSpeakingState(true, job.text);
+    job.timer = setTimeout(() => this.speechFailed(job, 'stalled', 'توقف الصوت. اضغط السماعة لإعادة تفعيله.'), 30000);
+  }
+
+  finishSpeech(job) {
+    if (!this.isCurrentSpeech(job)) return;
+    clearTimeout(job.timer);
+    if (job.url) URL.revokeObjectURL(job.url);
+    this.activeSpeech = null;
+    this.activeUtterance = null;
+    this.isSpeaking = false;
+    this.onSpeakingState(false);
+    setTimeout(() => {
+      if (job.generation === this.speechGeneration) this.processSpeechQueue();
+    }, 10);
+  }
+
+  speechFailed(job, code, message) {
+    if (!this.isCurrentSpeech(job)) return;
+    this.needsAudioGesture = true;
+    // Retry only audio that never began; partial speech must not be repeated.
+    if (!job.started) this.speechQueue.unshift(job.text);
+    clearTimeout(job.timer);
+    job.controller?.abort();
+    if (job.url) URL.revokeObjectURL(job.url);
+    this.activeSpeech = null;
+    this.activeUtterance = null;
+    if (this.audio) this.audio.pause();
+    window.speechSynthesis?.cancel();
+    this.isSpeaking = false;
+    this.onSpeakingState(false);
+    this.onSpeechError({ code, message });
+  }
+
+  async playRemoteSpeech(job) {
+    if (!this.isCurrentSpeech(job)) return;
+    this.preferRemoteSpeech = true;
+    clearTimeout(job.timer);
+    if (this.activeUtterance) {
+      this.activeUtterance.onstart = this.activeUtterance.onend = this.activeUtterance.onerror = null;
       this.activeUtterance = null;
-      this.isSpeaking = false;
-      this.onSpeakingState(false);
-      setTimeout(() => {
-        if (generation === this.speechGeneration) this.processSpeechQueue();
-      }, 10);
+      window.speechSynthesis?.cancel();
+    }
+    if (!this.audio) {
+      this.speechFailed(job, 'unsupported', 'الصوت غير متاح في هذا المتصفح. جرّب Safari أو Chrome.');
+      return;
+    }
+    job.controller = new AbortController();
+    job.timer = setTimeout(() => job.controller.abort(), 5000);
+    try {
+      const response = await fetch('/api/speech', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: job.text }), signal: job.controller.signal
+      });
+      if (!response.ok || !response.headers.get('content-type')?.startsWith('audio/')) throw new Error('Speech unavailable');
+      const blob = await response.blob();
+      if (!this.isCurrentSpeech(job)) return;
+      clearTimeout(job.timer);
+      job.url = URL.createObjectURL(blob);
+      this.audio.src = job.url;
+      this.audio.volume = 1;
+      this.audio.playbackRate = this.baseRate;
+      this.audio.onplaying = () => this.speechStarted(job);
+      this.audio.onended = () => this.finishSpeech(job);
+      this.audio.onerror = () => this.speechFailed(job, 'audio-error', 'تعذر تشغيل الصوت العربي. اضغط السماعة للمحاولة مجدداً.');
+      job.timer = setTimeout(() => this.speechFailed(job, 'not-started', 'لم يبدأ الصوت. اضغط السماعة لإعادة تفعيله.'), 4000);
+      await this.audio.play();
+    } catch (error) {
+      const blocked = error.name === 'NotAllowedError';
+      this.speechFailed(job, blocked ? 'not-allowed' : 'unavailable', blocked ?
+        'المتصفح منع الصوت. اضغط السماعة لتفعيل النطق.' : 'تعذر تحميل الصوت العربي. تحقق من الاتصال واضغط السماعة للمحاولة.');
+    }
+  }
+
+  processSpeechQueue() {
+    if (!this.voiceOutputEnabled || this.needsAudioGesture || this.activeSpeech || !this.speechQueue.length) return;
+    const job = { text: this.speechQueue.shift(), generation: this.speechGeneration, started: false };
+    this.activeSpeech = job;
+    if (this.preferRemoteSpeech || !this.arabicVoice || !window.speechSynthesis) { this.playRemoteSpeech(job); return; }
+    const synth = window.speechSynthesis;
+    if (synth.paused) synth.resume?.();
+    const utterance = new SpeechSynthesisUtterance(job.text);
+    this.activeUtterance = utterance;
+    utterance.lang = this.arabicVoice.lang;
+    utterance.voice = this.arabicVoice;
+    utterance.rate = Math.min(this.baseRate * (this.speechQueue.length ? 1.1 : 1), 1.4);
+    utterance.onstart = () => this.speechStarted(job);
+    utterance.onend = () => this.finishSpeech(job);
+    utterance.onerror = (event) => {
+      if (!this.isCurrentSpeech(job)) return;
+      if (!job.started && event.error !== 'not-allowed') this.playRemoteSpeech(job);
+      else {
+        this.preferRemoteSpeech = true;
+        this.speechFailed(job, event.error, 'تعذر النطق. اضغط السماعة أو استخدم اختبار الصوت من الإعدادات.');
+      }
     };
-    utterance.onend = finish;
-    utterance.onerror = finish;
-    window.speechSynthesis.speak(utterance);
+    // A missing onstart is a silent failure, not successful playback.
+    job.timer = setTimeout(() => {
+      if (!this.isCurrentSpeech(job) || job.started) return;
+      utterance.onend = utterance.onerror = null;
+      synth.cancel();
+      this.playRemoteSpeech(job);
+    }, 2500);
+    try { synth.speak(utterance); }
+    catch (_) { this.playRemoteSpeech(job); }
   }
 
   /**
@@ -141,35 +279,28 @@ class SpeechEngine {
     this.recognition.lang = this.speechLang;
 
     const finalizedIndexes = new Set();
+    this.segments = new window.LiveSegments(text => {
+      if (this.isListening) this.onResult({ final: text, interim: '', isFinal: true });
+    });
     this.recognition.onstart = () => {
       finalizedIndexes.clear();
+      this.segments.reset();
       if (!this.isListening) { this.recognition.abort(); return; }
       this.onStatusChange('listening');
     };
 
     this.recognition.onresult = (event) => {
       if (!this.isListening) return;
-      let interim = '';
-      let final = '';
-
-      for (let i = 0; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          if (i >= event.resultIndex && !finalizedIndexes.has(i)) {
-            finalizedIndexes.add(i);
-            final += ' ' + event.results[i][0].transcript;
-          }
-        } else {
-          interim += ' ' + event.results[i][0].transcript;
-        }
+      const drafts = [];
+      for (let i = 0; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (finalizedIndexes.has(i)) continue;
+        const draft = this.segments.update(i, result[0].transcript, result.isFinal);
+        if (result.isFinal) finalizedIndexes.add(i);
+        else if (draft) drafts.push(draft);
       }
-      if (!final.trim() && !interim.trim()) return;
-
       this.onAudioActivity(true);
-      this.onResult({
-        final: final.trim(),
-        interim: interim.trim(),
-        isFinal: !!final.trim()
-      });
+      if (drafts.length) this.onResult({ final: '', interim: drafts.join(' '), isFinal: false });
     };
 
     this.recognition.onerror = (event) => {
@@ -178,11 +309,13 @@ class SpeechEngine {
         this.isListening = false;
         this.releaseWakeLock();
         this.terminalError = 'permission_denied';
+        this.segments?.reset();
         this.onStatusChange(this.terminalError);
       } else if (['network', 'audio-capture', 'language-not-supported'].includes(event.error)) {
         this.isListening = false;
         this.releaseWakeLock();
         this.terminalError = event.error === 'network' ? 'network_error' : event.error === 'audio-capture' ? 'microphone_error' : 'unsupported';
+        this.segments?.reset();
         this.onStatusChange(this.terminalError);
       }
     };
@@ -191,6 +324,7 @@ class SpeechEngine {
       this.onAudioActivity(false);
       // إعادة التشغيل تلقائياً للاستمرار في الاستماع طوال مدة الاجتماع بدون انقطاع
       if (this.isListening) {
+        this.segments.finish();
         try {
           this.recognition.start();
         } catch (e) {
@@ -216,9 +350,7 @@ class SpeechEngine {
     try {
       if (!this.recognition) this.setupRecognition();
       this.cancelSpeech();
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
-      }
+      if (this.voiceOutputEnabled) this.prepareAudio();
       this.isListening = true;
       this.recognition.lang = this.speechLang;
       this.recognition.start();
@@ -240,6 +372,7 @@ class SpeechEngine {
       try { this.recognition.abort(); } catch (_) {}
     }
     this.cancelSpeech();
+    this.segments?.reset();
     this.onStatusChange('stopped');
   }
 

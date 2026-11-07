@@ -1,4 +1,4 @@
-const CACHE_NAME = 'turjuman-v3.1';
+const CACHE_NAME = 'turjuman-v3.2';
 const ASSETS = [
   '/',
   '/css/style.css',
@@ -14,6 +14,9 @@ const ASSETS = [
   '/js/app.js',
   '/js/ai-translator.js',
   '/js/speech-engine.js',
+  '/js/live-segments.js',
+  '/js/autocue.js',
+  '/audio/unlock.wav',
   '/js/socket-client.js',
   '/manifest.json',
   '/icons/icon-192.png'

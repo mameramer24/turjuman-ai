@@ -99,16 +99,19 @@ p { text-wrap: pretty; }
   border-radius: var(--radius);
   overflow: hidden;
 }
-.autocue-viewport { width: 100%; overflow-y: auto; padding: 20px; overscroll-behavior: contain; scrollbar-width: thin; }
-.autocue-feed { display: flex; flex-direction: column; gap: 22px; min-height: 100%; }
-.autocue-line { padding-block: 4px 18px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
-.line-arabic { font-size: var(--subtitle-size, clamp(24px, 2.8vw, 32px)); font-weight: 500; line-height: 1.8; color: var(--text-main); }
-.line-english { font-size: 14px; line-height: 1.7; color: var(--text-secondary); direction: ltr; text-align: left; margin-top: 8px; }
-.autocue-line.interim { border-bottom-style: dashed; }
+.autocue-viewport { width: 100%; min-height: 0; display: flex; padding: 24px; overflow: hidden; }
+.autocue-feed { width: 100%; min-height: 0; display: grid; place-items: center; }
+.autocue-line { width: 100%; max-width: 32rem; text-align: center; overflow-wrap: anywhere; }
+.line-arabic { font-size: var(--subtitle-size, clamp(28px, 3.8vw, 44px)); font-weight: 500; line-height: 1.85; color: var(--text-main); text-wrap: pretty; }
 .autocue-line.interim .line-arabic { color: var(--text-secondary); }
-#autocue-placeholder { margin-block: auto; border: 0; padding: 0; text-align: center; }
-#autocue-placeholder .line-arabic { font-size: 26px; color: var(--text-main); }
-#autocue-placeholder .line-english { direction: rtl; text-align: center; max-width: 38ch; margin: 12px auto 0; }
+.autocue-hint { color: var(--text-secondary); font-size: 14px; line-height: 1.8; max-width: 32ch; margin: 16px auto 0; }
+.audio-feedback { font-size: 12px; color: #fcd34d; margin-bottom: 8px; }
+.audio-feedback[hidden] { display: none; }
+.slide-enter { animation: autocue-next 180ms ease-out; }
+@keyframes autocue-next { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: translateY(0); } }
+.voice-btn.speaking { border-color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .slide-enter { animation: none; } }
+@media (max-height: 600px) { .line-arabic { font-size: min(var(--subtitle-size, 26px), 26px); line-height: 1.55; } }
 .app-footer {
   padding: 10px 16px max(10px, env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
