@@ -12,14 +12,17 @@ class SocketClient {
   }
 
   connect(roomId) {
+    this.disconnect();
     this.currentRoom = roomId || 'default';
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}`;
 
     try {
       this.ws = new WebSocket(wsUrl);
+      const socket = this.ws;
 
       this.ws.onopen = () => {
+        if (socket !== this.ws) return;
         console.log('[Turjuman WS] Connected to live interpretation room:', this.currentRoom);
         this.ws.send(JSON.stringify({
           type: 'join',
@@ -28,6 +31,7 @@ class SocketClient {
       };
 
       this.ws.onmessage = (event) => {
+        if (socket !== this.ws) return;
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'live_subtitle') {
@@ -41,6 +45,8 @@ class SocketClient {
       };
 
       this.ws.onclose = () => {
+        if (socket !== this.ws || !this.currentRoom) return;
+        this.onRoomStatus({ type: 'disconnected' });
         console.log('[Turjuman WS] Connection closed, retrying in 3s...');
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = setTimeout(() => {
@@ -64,6 +70,8 @@ class SocketClient {
         original: data.original,
         translated: data.translated,
         isInterim: !!data.isInterim,
+        segmentId: data.segmentId,
+        revision: data.revision,
         speaker: data.speaker || 'المتحدث',
         timestamp: data.timestamp || new Date().toLocaleTimeString('ar-EG')
       }));
@@ -72,11 +80,12 @@ class SocketClient {
 
   disconnect() {
     clearTimeout(this.reconnectTimer);
+    this.currentRoom = null;
     if (this.ws) {
+      this.ws.onclose = null;
       this.ws.close();
       this.ws = null;
     }
-    this.currentRoom = null;
   }
 }
 

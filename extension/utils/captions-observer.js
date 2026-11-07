@@ -9,6 +9,9 @@ class MeetingCaptionsObserver {
     this.observer = null;
     this.active = false;
     this.lastProcessedText = '';
+    this.lastCommittedText = '';
+    this.revision = 0;
+    this.debounceTimer = null;
     this.translator = new LiveTranslator();
 
     // محددات العناصر لمنصات الاجتماعات الشائعة
@@ -43,6 +46,9 @@ class MeetingCaptionsObserver {
   start() {
     if (this.active) return;
     this.active = true;
+    this.lastProcessedText = '';
+    this.lastCommittedText = '';
+    this.revision++;
 
     this.observer = new MutationObserver(this.handleMutations.bind(this));
     this.observer.observe(document.body, {
@@ -60,6 +66,8 @@ class MeetingCaptionsObserver {
   stop() {
     if (!this.active) return;
     this.active = false;
+    this.revision++;
+    clearTimeout(this.debounceTimer);
     if (this.observer) {
       this.observer.disconnect();
       this.observer = null;
@@ -73,52 +81,50 @@ class MeetingCaptionsObserver {
   async handleMutations(mutations) {
     if (!this.active) return;
 
-    const allSelectors = [
-      ...this.platformSelectors.zoom,
-      ...this.platformSelectors.meet,
-      ...this.platformSelectors.generic
-    ].join(', ');
-
-    const captionElements = document.querySelectorAll(allSelectors);
-    if (!captionElements || captionElements.length === 0) return;
-
-    // استخراج أحدث نص ظاهر
-    let combinedText = '';
+    const hostname = window.location.hostname;
+    const selectors = hostname.endsWith('.zoom.us') || hostname === 'zoom.us' ? this.platformSelectors.zoom :
+      hostname === 'meet.google.com' ? this.platformSelectors.meet :
+      hostname === 'www.youtube.com' || hostname === 'youtube.com' ? ['.ytp-caption-segment'] : this.platformSelectors.generic;
+    const candidates = Array.from(document.querySelectorAll(selectors.join(', ')))
+      .filter(el => !el.closest('#zoomlive-ar-overlay-root'));
+    // Parent and child selector matches represent the same caption, not two utterances.
+    const elements = candidates.filter(el => !candidates.some(parent => parent !== el && parent.contains(el)));
     let speaker = '';
-
-    captionElements.forEach(el => {
-      // محاولة استخراج اسم المتحدث إن وجد
+    const texts = [];
+    for (const el of elements) {
       const speakerEl = el.querySelector('[class*="speaker"], [class*="name"], strong, b');
-      if (speakerEl && !speaker) {
-        speaker = speakerEl.textContent.trim().replace(/[:：]$/, '');
-      }
-
-      const text = el.innerText || el.textContent;
-      if (text && text.trim().length > 1) {
-        combinedText += ' ' + text.trim();
-      }
-    });
-
-    combinedText = combinedText.trim();
-    if (!combinedText || combinedText === this.lastProcessedText) return;
-
-    // تنظيف وتجنب التكرار السريع
-    this.lastProcessedText = combinedText;
-
-    // ترجمة النص فورياً
-    try {
-      const translated = await this.translator.translate(combinedText, 'en', 'ar');
-      if (this.onSubtitle && typeof this.onSubtitle === 'function') {
-        this.onSubtitle({
-          original: combinedText,
-          translated: translated,
-          speaker: speaker || 'المتحدث',
-          timestamp: new Date().toLocaleTimeString('ar-EG')
-        });
-      }
-    } catch (err) {
-      console.warn('[ZoomLiveAR] Caption translation error:', err);
+      if (speakerEl && !speaker) speaker = speakerEl.textContent.trim().replace(/[:：]$/, '');
+      const text = (el.innerText || el.textContent || '').trim();
+      if (text && !texts.includes(text)) texts.push(text);
     }
+    const snapshot = texts.join(' ').trim();
+    if (snapshot === this.lastProcessedText) return;
+    this.lastProcessedText = snapshot;
+    const revision = ++this.revision;
+    clearTimeout(this.debounceTimer);
+    if (!snapshot) return;
+    // Caption platforms revise their text repeatedly. Translate after it stabilizes.
+    this.debounceTimer = setTimeout(async () => {
+      const words = snapshot.split(/\s+/);
+      const previous = this.lastCommittedText.split(/\s+/);
+      let overlap = 0;
+      for (let count = Math.min(words.length, previous.length); count >= 2; count--) {
+        if (previous.slice(-count).join(' ').toLowerCase() === words.slice(0, count).join(' ').toLowerCase()) {
+          overlap = count;
+          break;
+        }
+      }
+      const text = words.slice(overlap).join(' ');
+      if (!text) return;
+      try {
+        const translated = await this.translator.translate(text, 'en', 'ar');
+        if (!translated || !this.active || revision !== this.revision) return;
+        this.lastCommittedText = snapshot;
+        this.onSubtitle?.({ original: text, translated, speaker: speaker || 'المتحدث', timestamp: new Date().toLocaleTimeString('ar-EG') });
+      } catch (err) {
+        console.warn('[ZoomLiveAR] Caption translation failed');
+      }
+    }, 650);
   }
 }
 

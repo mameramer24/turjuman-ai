@@ -29,7 +29,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   let pipWindow = null;
   let transcriptHistory = [];
   let interimDebounceTimer = null;
-  let selectedDeviceId = 'default';
+  let sessionVersion = 0;
+  let draftRevision = 0;
+  let segmentNumber = 0;
+  let finalQueue = Promise.resolve();
+  const sourceId = `studio-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   // التحقق من دعم ميزة التعرف على الصوت
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -40,25 +44,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  // ملء قائمة أجهزة الإدخال (الميكروفونات وصوت النظام)
-  async function populateAudioDevices() {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const audioInputs = devices.filter(d => d.kind === 'audioinput');
-      
-      inputSource.innerHTML = '<option value="default">الميكروفون الافتراضي / صوت السماعات</option>';
-      audioInputs.forEach((device, index) => {
-        if (device.deviceId && device.deviceId !== 'default') {
-          const opt = document.createElement('option');
-          opt.value = device.deviceId;
-          opt.textContent = device.label || `ميكروفون ${index + 1}`;
-          inputSource.appendChild(opt);
-        }
-      });
-    } catch (e) {
-      console.warn('Could not enumerate audio devices:', e);
-    }
-  }
+  // SpeechRecognition uses the browser's default microphone, not a getUserMedia device selection.
+  inputSource.disabled = true;
+  inputSource.innerHTML = '<option value="default">ميكروفون المتصفح الافتراضي</option>';
+  inputSource.title = 'غيّر جهاز الإدخال من إعدادات المتصفح أو النظام.';
 
   // إعداد محرك التعرف على الصوت
   function setupRecognition() {
@@ -68,7 +57,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     recognition.maxAlternatives = 1;
     recognition.lang = speechLang.value || 'en-US';
 
+    const finalizedIndexes = new Set();
     recognition.onstart = () => {
+      finalizedIndexes.clear();
       speechStatus.textContent = 'يستمع الآن لصوت المتحدث...';
       speechStatus.className = 'badge active';
       visualizer.classList.add('active');
@@ -77,53 +68,48 @@ document.addEventListener('DOMContentLoaded', async () => {
       listenBtnText.textContent = 'إيقاف الاستماع';
     };
 
-    recognition.onresult = async (event) => {
-      let interimTranscript = '';
-      let finalTranscript = '';
-
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
+    recognition.onresult = (event) => {
+      if (!isListening) return;
+      let interim = '', final = '';
+      for (let i = 0; i < event.results.length; i++) {
         const item = event.results[i];
         if (item.isFinal) {
-          finalTranscript += item[0].transcript;
-        } else {
-          interimTranscript += item[0].transcript;
-        }
-      }
-
-      // معالجة النص المؤقت (أثناء تحدث الضيف)
-      if (interimTranscript) {
-        currentEnglish.textContent = interimTranscript;
-        
-        // ترجمة سريعة معتمدة على التوقف القصير
-        clearTimeout(interimDebounceTimer);
-        interimDebounceTimer = setTimeout(async () => {
-          if (interimTranscript.trim().length > 3) {
-            const tempArabic = await translator.translate(interimTranscript, 'en', 'ar');
-            currentArabic.textContent = tempArabic;
-            currentArabic.style.opacity = '0.75';
-            broadcastSubtitle(tempArabic, interimTranscript, true);
+          if (i >= event.resultIndex && !finalizedIndexes.has(i)) {
+            finalizedIndexes.add(i);
+            final += ' ' + item[0].transcript;
           }
-        }, 220);
+        } else interim += ' ' + item[0].transcript;
       }
-
-      // معالجة الجملة المكتملة (عند انتهاء الضيف من جملة)
-      if (finalTranscript.trim()) {
-        clearTimeout(interimDebounceTimer);
-        currentEnglish.textContent = finalTranscript;
-        
-        const arabicResult = await translator.translate(finalTranscript, 'en', 'ar');
-        currentArabic.textContent = arabicResult;
-        currentArabic.style.opacity = '1';
-
-        // إضافة للسجل
-        addTranscriptItem({
-          time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-          english: finalTranscript.trim(),
-          arabic: arabicResult.trim()
-        });
-
-        // بث للنافذة العائمة وتبويبات زوم
-        broadcastSubtitle(arabicResult, finalTranscript, false);
+      interim = interim.trim();
+      final = final.trim();
+      const version = sessionVersion;
+      const revision = ++draftRevision;
+      clearTimeout(interimDebounceTimer);
+      if (final) {
+        const id = `${sourceId}:${segmentNumber++}`;
+        const translated = translator.translate(final, 'en', 'ar');
+        finalQueue = finalQueue.then(async () => {
+          const arabic = await translated;
+          if (!isListening || version !== sessionVersion) return;
+          if (!arabic) { speechStatus.textContent = 'تعذرت الترجمة. تحقق من الاتصال.'; return; }
+          currentEnglish.textContent = final;
+          currentArabic.textContent = arabic;
+          currentArabic.style.opacity = '1';
+          addTranscriptItem({ time: new Date().toLocaleTimeString('ar-EG'), english: final, arabic });
+          await broadcastSubtitle(arabic, final, false, id, revision);
+        }).catch(() => { speechStatus.textContent = 'تعذرت الترجمة. تحقق من الاتصال.'; });
+      }
+      if (interim) {
+        const id = `${sourceId}:${segmentNumber}`;
+        interimDebounceTimer = setTimeout(async () => {
+          const arabic = await translator.translate(interim, 'en', 'ar');
+          await finalQueue;
+          if (!arabic || !isListening || version !== sessionVersion || revision !== draftRevision) return;
+          currentEnglish.textContent = interim;
+          currentArabic.textContent = arabic;
+          currentArabic.style.opacity = '0.8';
+          broadcastSubtitle(arabic, interim, true, id, revision);
+        }, 220);
       }
     };
 
@@ -160,10 +146,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function startListening() {
     try {
       // طلب الإذن الصوتي والتأكد من تفعيل الأجهزة
-      await navigator.mediaDevices.getUserMedia({
-        audio: selectedDeviceId === 'default' ? true : { deviceId: { exact: selectedDeviceId } }
-      });
-      await populateAudioDevices();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop());
 
       if (!recognition) {
         setupRecognition();
@@ -171,6 +155,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         recognition.lang = speechLang.value;
       }
 
+      sessionVersion++;
       isListening = true;
       recognition.start();
     } catch (err) {
@@ -182,6 +167,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // إيقاف الاستماع
   function stopListening() {
     isListening = false;
+    sessionVersion++;
+    draftRevision++;
+    clearTimeout(interimDebounceTimer);
+    finalQueue = Promise.resolve();
     if (recognition) {
       try {
         recognition.stop();
@@ -214,15 +203,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // تغيير جهاز الصوت
-  inputSource.addEventListener('change', () => {
-    selectedDeviceId = inputSource.value;
-    if (isListening) {
-      stopListening();
-      setTimeout(startListening, 300);
-    }
-  });
-
   // سلايدر حجم الخط
   fontSizeSlider.addEventListener('input', () => {
     const size = fontSizeSlider.value;
@@ -235,7 +215,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // بث الترجمة لجميع التبويبات النشطة والشريط العائم
-  async function broadcastSubtitle(arabic, english, isInterim) {
+  async function broadcastSubtitle(arabic, english, isInterim, segmentId, revision) {
     // 1. تحديث نافذة Picture-in-Picture إذا كانت مفتوحة
     if (pipWindow && !pipWindow.closed) {
       const pipAr = pipWindow.document.getElementById('pip-arabic');
@@ -258,7 +238,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             type: 'NEW_SUBTITLE',
             translated: arabic,
             original: english,
-            isInterim: isInterim
+            isInterim, segmentId, revision
           }).catch(() => {});
         }
       });
@@ -325,8 +305,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         pipWindow.document.body.innerHTML = `
           <div class="pip-badge">● ترجمة فورية حية (Always on Top)</div>
-          <div id="pip-arabic" class="pip-arabic">${currentArabic.textContent}</div>
-          <div id="pip-english" class="pip-english">${currentEnglish.textContent}</div>
+          <div id="pip-arabic" class="pip-arabic">${escapeHtml(currentArabic.textContent)}</div>
+          <div id="pip-english" class="pip-english">${escapeHtml(currentEnglish.textContent)}</div>
         `;
 
         pipWindow.addEventListener('pagehide', () => {
@@ -426,5 +406,5 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // التحقق من صلاحيات الأجهزة المتاحة مبدئياً
-  await populateAudioDevices();
+
 });

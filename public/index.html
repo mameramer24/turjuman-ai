@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>ترجمان AI | الترجمة الفورية بالصوت للاجتماعات</title>
   
   <!-- PWA & Mobile Web App Meta -->
@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
   
-  <link rel="stylesheet" href="/css/style.css?v=2.1">
+  <link rel="stylesheet" href="/css/style.css?v=3.0">
 </head>
 <body>
   <div class="app-layout">
@@ -33,11 +33,7 @@
       </div>
 
       <div class="header-tools">
-        <button id="btn-share-room" class="tool-btn" title="مشاركة الغرفة مع العميل أو الهاتف">
-          <span class="icon">🔗</span>
-          <span class="btn-label">مشاركة الغرفة</span>
-        </button>
-        <button id="btn-open-settings" class="tool-btn" title="الإعدادات">
+        <button id="btn-open-settings" class="tool-btn" title="الإعدادات وأدوات الجلسة" aria-label="الإعدادات وأدوات الجلسة">
           <span class="icon">⚙️</span>
         </button>
       </div>
@@ -46,15 +42,85 @@
     <!-- شريط معلومات الغرفة والمتصلين -->
     <div class="room-bar" id="room-bar">
       <div class="room-info">
-        <span class="status-dot active"></span>
+        <span class="status-dot" id="connection-dot" aria-hidden="true"></span>
         <span id="room-display-name">الغرفة: عامة (مباشر)</span>
       </div>
       <div class="room-clients">
         <span class="icon">👥</span>
-        <span id="clients-count">1 متصل</span>
+        <span id="clients-count">جارٍ الاتصال…</span>
       </div>
     </div>
 
+    <!-- بطاقة العرض المباشر (الشاشة الرئيسية للترجمة) -->
+    <main class="live-viewport">
+      <div class="reading-status">
+        <span class="direction-tag"><span lang="en" dir="ltr">English</span><span aria-hidden="true">←</span><span>العربية</span></span>
+        <div class="sound-wave" id="sound-wave" aria-hidden="true">
+          <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
+        </div>
+      </div>
+      <p id="session-status" class="session-status" role="status">اضغط بدء الاستماع لالتقاط الكلام من المايك.</p>
+      <div class="autocue-container" id="autocue-container" aria-label="الترجمة المباشرة">
+        <!-- منطقة التمرير العمودي المتدفق بنظام سطر بسطر -->
+        <div class="autocue-viewport" id="autocue-viewport">
+          <div class="autocue-feed" id="autocue-feed">
+            <div class="autocue-line active" id="autocue-placeholder">
+              <div class="line-arabic" id="live-arabic">
+                ترجمتك تظهر هنا
+              </div>
+              <div class="line-english" id="live-english" lang="ar" dir="rtl">
+                ابدأ الاستماع، واستخدم سماعات الأذن لسماع الترجمة دون التقاطها بالمايك.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <footer class="app-footer">
+      <div class="main-action-group">
+        <button id="btn-main-listen" class="btn-primary-listen" aria-pressed="false">
+          <span class="mic-circle" aria-hidden="true">●</span>
+          <span id="listen-text" class="listen-text">بدء الاستماع والترجمة</span>
+        </button>
+        <button id="btn-toggle-voice" class="voice-btn active" aria-label="كتم الترجمة الصوتية" aria-pressed="true" title="كتم الترجمة الصوتية">
+          <span class="voice-icon" id="voice-icon" aria-hidden="true">🔊</span>
+          <span class="visually-hidden"><strong>الترجمة الصوتية: مفعّلة</strong><small id="voice-status-hint">النطق بعد اكتمال العبارة</small></span>
+        </button>
+      </div>
+    </footer>
+
+    <!-- نافذة المشاركة والربط مع الهاتف عبر QR Code -->
+    <dialog class="modal-overlay" id="share-modal" aria-labelledby="share-title">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="share-title">مشاركة الغرفة</h3>
+          <button class="close-modal-btn" id="close-share-modal" aria-label="إغلاق النافذة">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-desc">
+            افتح هذا الرابط على هاتف العميل ليسمع ويقرأ الترجمة الفورية بالعربية متزامنة مع المتحدث في زوم:
+          </p>
+          <div class="qr-container" id="qr-container">
+            <img id="qr-img" alt="QR Code" width="180" height="180">
+          </div>
+          <div class="link-copy-box">
+            <input type="text" id="room-url-input" readonly aria-label="رابط الغرفة" dir="ltr">
+            <button id="btn-copy-link" class="btn-copy">نسخ الرابط</button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- نافذة الإعدادات -->
+    <dialog class="modal-overlay" id="settings-modal" aria-labelledby="settings-title">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="settings-title">الإعدادات وأدوات الجلسة</h3>
+          <button class="close-modal-btn" id="close-settings-modal" aria-label="إغلاق النافذة">✕</button>
+        </div>
+        <div class="modal-body">
     <!-- بانر تثبيت PWA على الهاتف -->
     <div class="pwa-install-banner" id="pwa-install-banner" style="display: none;">
       <div class="pwa-banner-text">
@@ -63,133 +129,16 @@
       </div>
       <button id="btn-pwa-install" class="btn-pwa-install">تثبيت الآن</button>
     </div>
-    
+
     <!-- إشعار تثبيت الآيفون -->
     <div class="ios-install-hint" id="ios-install-hint" style="display: none;">
       <span>💡 للتثبيت على الآيفون: اضغط زر المشاركة <strong style="color: #38bdf8;">⎋</strong> بالأسفل ثم اختر <strong style="color: #38bdf8;">«إضافة إلى الشاشة الرئيسية ＋»</strong></span>
-      <button id="close-ios-hint" style="background:none; border:none; color:#94a3b8; cursor:pointer;">✕</button>
+      <button id="close-ios-hint" aria-label="إخفاء إرشادات التثبيت" style="background:none; border:none; color:#94a3b8; cursor:pointer;">✕</button>
     </div>
 
-    <!-- بطاقة العرض المباشر (الشاشة الرئيسية للترجمة) -->
-    <main class="live-viewport">
-      <div class="viewport-header">
-        <div class="direction-tag">
-          <span class="lang-pill">English 🇺🇸</span>
-          <span class="arrow">➔</span>
-          <span class="lang-pill highlight">العربية 🇸🇦</span>
-        </div>
-        <div class="sound-wave" id="sound-wave" title="مؤشر التقاط الصوت">
-          <span class="wave-bar"></span>
-          <span class="wave-bar"></span>
-          <span class="wave-bar"></span>
-          <span class="wave-bar"></span>
-          <span class="wave-bar"></span>
-        </div>
-      </div>
 
-      <!-- مؤشر وضع سماعة الأذن المتصلة للمترجم الفوري -->
-      <div class="earphone-mode-pill" id="earphone-mode-pill">
-        <span class="earphone-icon" id="earphone-icon">🎧</span>
-        <span class="earphone-label" id="earphone-status-label">وضع سماعة الأذن: المايك يستمع للإنجليزي ➔ ينطق الترجمة العربية في سماعتك</span>
-      </div>
-
-      <!-- شاشة عرض الترجمة بنظام الأوتو كيو (Autocue / Teleprompter Display) -->
-      <div class="autocue-container" id="autocue-container">
-        <!-- شريط توجيه وتحكم الأوتو كيو -->
-        <div class="autocue-top-bar">
-          <div class="autocue-mode-tag">
-            <span class="autocue-live-dot"></span>
-            <span>ملقن النصوص المباشر (Autocue)</span>
-          </div>
-          <div class="autocue-controls">
-            <button id="btn-autocue-scroll" class="autocue-tool-btn active" title="تبديل التمرير التلقائي">تمرير تلقائي ✓</button>
-            <button id="btn-autocue-clear" class="autocue-tool-btn" title="مسح شاشة الملقن">مسح</button>
-          </div>
-        </div>
-
-        <!-- منطقة التمرير العمودي المتدفق بنظام سطر بسطر -->
-        <div class="autocue-viewport" id="autocue-viewport">
-          <div class="autocue-feed" id="autocue-feed">
-            <div class="autocue-line active" id="autocue-placeholder">
-              <div class="line-arabic" id="live-arabic">
-                ضع الموبايل بجانب لابتوب الاجتماع، أو اضغط الزر بالأسفل لتبدأ الترجمة بالظهور سطراً بسطر بنظام الأوتو كيو...
-              </div>
-              <div class="line-english" id="live-english">
-                (Waiting for spoken English speech...)
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- زر التحكم في الترجمة الصوتية (النطق بالعربية للموبايل) -->
-      <div class="voice-toggle-wrapper">
-        <button id="btn-toggle-voice" class="voice-btn active" title="تشغيل أو كتم الصوت العربي">
-          <span class="voice-icon" id="voice-icon">🔊</span>
-          <div class="voice-text">
-            <strong>الترجمة الصوتية: مفعّلة</strong>
-            <small id="voice-status-hint">تسمع الترجمة بصوت عربي فوري عبر السماعات</small>
-          </div>
-        </button>
-      </div>
-    </main>
-
-    <!-- شريط التحكم السفلي للهواتف -->
-    <footer class="app-footer">
-      <div class="main-action-group">
-        <button id="btn-main-listen" class="btn-primary-listen">
-          <span class="mic-circle" id="mic-circle">
-            <span class="mic-icon">🎙️</span>
-          </span>
-          <span id="listen-text" class="listen-text">بدء الاستماع والترجمة</span>
-        </button>
-      </div>
-
-      <div class="footer-subactions">
-        <button id="btn-font-toggle" class="sub-btn" title="تغيير حجم الخط">
-          <span>A+</span>
-        </button>
-        <button id="btn-open-transcript" class="sub-btn" title="سجل المحادثة">
-          <span>📋 السجل</span>
-        </button>
-        <button id="btn-clear-screen" class="sub-btn" title="مسح الشاشة">
-          <span>🗑️ مسح</span>
-        </button>
-      </div>
-    </footer>
-
-    <!-- نافذة المشاركة والربط مع الهاتف عبر QR Code -->
-    <div class="modal-overlay" id="share-modal">
-      <div class="modal-card">
-        <div class="modal-header">
-          <h3>مشاركة الاجتماع مع الموبايل أو العميل</h3>
-          <button class="close-modal-btn" id="close-share-modal">✕</button>
-        </div>
-        <div class="modal-body">
-          <p class="modal-desc">
-            افتح هذا الرابط على هاتف العميل ليسمع ويقرأ الترجمة الفورية بالعربية متزامنة مع المتحدث في زوم:
-          </p>
-          <div class="qr-container" id="qr-container">
-            <img id="qr-img" src="" alt="QR Code" width="180" height="180">
-          </div>
-          <div class="link-copy-box">
-            <input type="text" id="room-url-input" readonly>
-            <button id="btn-copy-link" class="btn-copy">نسخ الرابط</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- نافذة الإعدادات -->
-    <div class="modal-overlay" id="settings-modal">
-      <div class="modal-card">
-        <div class="modal-header">
-          <h3>إعدادات الترجمة والذكاء الاصطناعي</h3>
-          <button class="close-modal-btn" id="close-settings-modal">✕</button>
-        </div>
-        <div class="modal-body">
           <div class="setting-row">
-            <label>محرك الترجمة:</label>
+            <label for="setting-engine-select">محرك الترجمة:</label>
             <select id="setting-engine-select">
               <option value="auto">تلقائي (الذكاء الاصطناعي مع تسريع فوري)</option>
               <option value="gemini">Google Gemini AI (الأدق للمصطلحات والمحادثات)</option>
@@ -198,21 +147,21 @@
           </div>
 
           <div class="setting-row">
-            <label>مفتاح Google Gemini API (اختياري):</label>
+            <label for="gemini-key-input">مفتاح Google Gemini API (اختياري):</label>
             <input type="password" id="gemini-key-input" placeholder="AIzaSy...">
             <small class="hint-text">إذا تم إدخاله، سيتم استخدامه لترجمة الجمل بدقة فائقة وبفهم للسياق.</small>
           </div>
 
           <div class="setting-row">
-            <label>سرعة نطق الصوت العربي:</label>
+            <label for="speech-speed-range">سرعة نطق الصوت العربي:</label>
             <div class="range-wrapper">
-              <input type="range" id="speech-speed-range" min="0.9" max="1.3" step="0.05" value="1.1">
-              <span id="speech-speed-val">1.1x</span>
+              <input type="range" id="speech-speed-range" min="0.9" max="1.4" step="0.05" value="1.15">
+              <span id="speech-speed-val">1.15x</span>
             </div>
           </div>
 
           <div class="setting-row">
-            <label>لهجة إنجليزية المتحدث:</label>
+            <label for="setting-speech-lang">لهجة إنجليزية المتحدث:</label>
             <select id="setting-speech-lang">
               <option value="en-US">الإنجليزية (الولايات المتحدة الأمريكية - US)</option>
               <option value="en-GB">الإنجليزية (بريطانيا - UK)</option>
@@ -221,17 +170,28 @@
             </select>
           </div>
 
+          <p class="hint-text">النص الأولي يتحدث أثناء الكلام. تُنطق كل عبارة مكتملة مرة واحدة. استخدم سماعات الأذن لتجنب رجوع الصوت للمايك.</p>
+          <div class="session-tools" aria-label="أدوات الجلسة">
+            <button id="btn-font-toggle" class="sub-btn" title="تغيير حجم الخط"><span>A+ حجم النص</span></button>
+            <button id="btn-autocue-scroll" class="sub-btn active" aria-pressed="true">تمرير تلقائي ✓</button>
+            <button id="btn-open-transcript" class="sub-btn">سجل المحادثة</button>
+            <button id="btn-clear-screen" class="sub-btn">مسح الشاشة</button>
+            <button id="btn-share-room" class="tool-btn" title="مشاركة الغرفة مع العميل أو الهاتف">
+              <span class="icon" aria-hidden="true">🔗</span>
+              <span class="btn-label">مشاركة الغرفة</span>
+            </button>
+          </div>
           <button id="btn-save-settings" class="btn-save">حفظ الإعدادات</button>
         </div>
       </div>
-    </div>
+    </dialog>
 
     <!-- نافذة سجل المحادثات وتصدير الملاحظات -->
-    <div class="modal-overlay" id="transcript-modal">
+    <dialog class="modal-overlay" id="transcript-modal" aria-labelledby="transcript-title">
       <div class="modal-card modal-large">
         <div class="modal-header">
-          <h3>سجل ما قيل في الاجتماع (Transcript)</h3>
-          <button class="close-modal-btn" id="close-transcript-modal">✕</button>
+          <h3 id="transcript-title">سجل المحادثة</h3>
+          <button class="close-modal-btn" id="close-transcript-modal" aria-label="إغلاق النافذة">✕</button>
         </div>
         <div class="modal-body">
           <div class="transcript-toolbar">
@@ -244,14 +204,14 @@
           </div>
         </div>
       </div>
-    </div>
+    </dialog>
   </div>
 
   <!-- Scripts -->
-  <script src="/js/ai-translator.js?v=2.1"></script>
-  <script src="/js/speech-engine.js?v=2.1"></script>
-  <script src="/js/socket-client.js?v=2.1"></script>
-  <script src="/js/app.js?v=2.1"></script>
+  <script src="/js/ai-translator.js?v=3.0"></script>
+  <script src="/js/speech-engine.js?v=3.0"></script>
+  <script src="/js/socket-client.js?v=3.0"></script>
+  <script src="/js/app.js?v=3.0"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});

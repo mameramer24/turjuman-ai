@@ -32,9 +32,11 @@ class LiveTranslator {
     }
 
     const promise = (async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
       try {
         const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(from)}&tl=${encodeURIComponent(to)}&dt=t&q=${encodeURIComponent(trimmed)}`;
-        const response = await fetch(url);
+        const response = await fetch(url, { signal: controller.signal });
         
         if (!response.ok) {
           throw new Error(`Translation API error: ${response.status}`);
@@ -49,7 +51,7 @@ class LiveTranslator {
         }
 
         if (!translatedText) {
-          translatedText = trimmed; // إرجاع النص الأصلي في حال الفشل
+          return ''; // A failed translation must not masquerade as translated speech.
         }
 
         // حفظ في الكاش
@@ -62,15 +64,16 @@ class LiveTranslator {
 
         return translatedText;
       } catch (err) {
-        console.warn('LiveTranslator error:', err);
-        return trimmed; // fallback to original
+        console.warn('LiveTranslator unavailable');
+        return '';
       } finally {
-        this.pendingQueue.delete(cacheKey);
+        clearTimeout(timer);
       }
     })();
 
     this.pendingQueue.set(cacheKey, promise);
-    return promise;
+    try { return await promise; }
+    finally { this.pendingQueue.delete(cacheKey); }
   }
 
   /**

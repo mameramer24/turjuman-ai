@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // تحديد الغرفة الحالية من الرابط أو التعيين التلقائي
   const pathParts = window.location.pathname.split('/');
   const roomIndex = pathParts.indexOf('room');
-  let roomId = 'meeting-live';
+  let roomId = '';
   if (roomIndex !== -1 && pathParts[roomIndex + 1]) {
     roomId = pathParts[roomIndex + 1];
   } else {
@@ -14,6 +14,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (urlParams.get('room')) {
       roomId = urlParams.get('room');
     }
+  }
+
+  if (!/^[\w-]{1,80}$/.test(roomId)) {
+    const savedRoom = localStorage.getItem('turjuman_room');
+    roomId = savedRoom && /^[\w-]{1,80}$/.test(savedRoom) ? savedRoom :
+      `meeting-${window.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`;
+    localStorage.setItem('turjuman_room', roomId);
+    window.history?.replaceState(null, '', `/room/${roomId}`);
   }
 
   // عناصر الواجهة
@@ -33,8 +41,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const autocueFeed = document.getElementById('autocue-feed');
   let autocuePlaceholder = document.getElementById('autocue-placeholder');
   const btnAutocueScroll = document.getElementById('btn-autocue-scroll');
-  const btnAutocueClear = document.getElementById('btn-autocue-clear');
-  let currentAutocueLine = null;
   let autoScrollEnabled = true;
 
   // نوافذ Modals
@@ -59,7 +65,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnOpenTranscript = document.getElementById('btn-open-transcript');
   const closeTranscriptModal = document.getElementById('close-transcript-modal');
   const transcriptItemsBox = document.getElementById('transcript-items-box');
-  const emptyTranscriptMsg = document.getElementById('empty-transcript-msg');
+  let emptyTranscriptMsg = document.getElementById('empty-transcript-msg');
   const btnCopyTranscript = document.getElementById('btn-copy-transcript');
   const btnDownloadTranscript = document.getElementById('btn-download-transcript');
   const btnClearTranscript = document.getElementById('btn-clear-transcript');
@@ -112,129 +118,145 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // نظام ملقن النصوص المتدفق سطراً بسطر (Autocue / Teleprompter Feed)
-  function renderAutocueLine(arabic, english, isInterim) {
+  // Each recognized segment owns one row; revisions only replace its draft.
+  const subtitleLines = new Map();
+  let sessionVersion = 0;
+  let draftRevision = 0;
+  let segmentNumber = 0;
+  const sourceId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  let finalQueue = Promise.resolve();
+  const segmentId = () => `${sourceId}:${segmentNumber}`;
+
+  function renderAutocueLine(arabic, english, isInterim, id, revision = 0) {
+    let line = subtitleLines.get(id);
+    if (line && (line.final || revision < line.revision)) return false;
     if (autocuePlaceholder) {
       autocuePlaceholder.remove();
       autocuePlaceholder = null;
     }
-
-    if (isInterim) {
-      if (!currentAutocueLine) {
-        currentAutocueLine = document.createElement('div');
-        currentAutocueLine.className = 'autocue-line active interim new-entry';
-        currentAutocueLine.innerHTML = `
-          <div class="line-arabic">${escapeHtml(arabic)}</div>
-          <div class="line-english">${escapeHtml(english)}</div>
-        `;
-        autocueFeed.appendChild(currentAutocueLine);
-      } else {
-        const arEl = currentAutocueLine.querySelector('.line-arabic');
-        const enEl = currentAutocueLine.querySelector('.line-english');
-        if (arEl) arEl.textContent = arabic;
-        if (enEl) enEl.textContent = english;
-      }
-    } else {
-      if (!currentAutocueLine) {
-        currentAutocueLine = document.createElement('div');
-        currentAutocueLine.className = 'autocue-line active new-entry';
-        autocueFeed.appendChild(currentAutocueLine);
-      }
-
-      currentAutocueLine.className = 'autocue-line active';
-      currentAutocueLine.innerHTML = `
-        <div class="line-arabic">${escapeHtml(arabic)}</div>
-        <div class="line-english">${escapeHtml(english)}</div>
-      `;
-
-      const previousLine = currentAutocueLine;
-      currentAutocueLine = null;
-
-      setTimeout(() => {
-        if (previousLine) {
-          previousLine.classList.remove('active');
-          previousLine.classList.add('past');
-        }
-      }, 1200);
+    if (!line) {
+      line = { element: document.createElement('div') };
+      subtitleLines.set(id, line);
+      autocueFeed.appendChild(line.element);
     }
+    line.final = !isInterim;
+    line.revision = revision;
+    line.element.className = `autocue-line active${isInterim ? ' interim' : ''}`;
+    line.element.innerHTML = `
+      <div class="line-arabic">${escapeHtml(arabic)}</div>
+      <div class="line-english" lang="en" dir="ltr">${escapeHtml(english)}</div>
+    `;
+    // Keep old text readable and retain segment IDs to reject delayed replays.
+    if (subtitleLines.size > 300) {
+      const oldest = subtitleLines.keys().next().value;
+      subtitleLines.get(oldest).element.remove();
+      subtitleLines.delete(oldest);
+    }
+    if (autoScrollEnabled) {
+      autocueViewport.scrollTo({ top: autocueViewport.scrollHeight, behavior: 'auto' });
+    }
+    return true;
+  }
 
-    if (autoScrollEnabled && autocueViewport) {
-      autocueViewport.scrollTo({
-        top: autocueViewport.scrollHeight,
-        behavior: 'smooth'
-      });
+  function invalidatePendingTranslations() {
+    sessionVersion++;
+    draftRevision++;
+    segmentNumber++;
+    clearTimeout(interimDebounceTimer);
+    finalQueue = Promise.resolve();
+    for (const [id, line] of subtitleLines) {
+      if (!line.final) {
+        line.element.remove();
+        subtitleLines.delete(id);
+      }
     }
   }
 
-  // نظام الترجمة الصوتية الفورية المتدفقة (Streaming Voice Interpreter)
-  // ينطق العبارات في سماعة الأذن فورياً أثناء تحدث الضيف (بمجرد 3 كلمات) بدون أي انتظار لنهاية الجملة
-  let streamedWordsCount = 0;
-  let lastSpokenText = '';
+  function showSessionStatus(text, error = false) {
+    const status = document.getElementById('session-status');
+    if (status) {
+      status.textContent = text;
+      status.classList.toggle('error', error);
+    }
+  }
 
-  async function processLiveStreamingVoice(text, isFinal = false) {
-    if (!speechEngine.voiceOutputEnabled) return;
-    if (!text || !text.trim()) return;
+  function handleRecognitionResult(result) {
+    if (!speechEngine.isListening) return;
+    clearTimeout(interimDebounceTimer);
+    const version = sessionVersion;
+    const revision = ++draftRevision;
 
-    const words = text.trim().split(/\s+/);
-    const totalWords = words.length;
-
-    if (isFinal) {
-      if (totalWords > streamedWordsCount) {
-        const remaining = words.slice(streamedWordsCount).join(' ');
-        if (remaining.trim().length > 1) {
-          const trans = await translator.translate(remaining, 'en', 'ar');
-          if (trans.translated && trans.translated !== lastSpokenText) {
-            lastSpokenText = trans.translated;
-            speechEngine.speakArabic(trans.translated);
-          }
+    if (result.final) {
+      const id = segmentId();
+      segmentNumber++;
+      // Start requests immediately, but commit text, history and speech in order.
+      const translation = translator.translate(result.final, 'en', 'ar').then(res => ({ res }), error => ({ error }));
+      finalQueue = finalQueue.then(async () => {
+        const outcome = await translation;
+        if (version !== sessionVersion || !speechEngine.isListening) return;
+        if (outcome.error) throw outcome.error;
+        const res = outcome.res;
+        if (res.engine === 'failed') {
+          renderAutocueLine('تعذرت الترجمة. تحقق من الاتصال بالإنترنت.', result.final, false, id, revision);
+          showSessionStatus('تعذرت ترجمة العبارة. تحقق من الاتصال.', true);
+          return;
         }
-      }
-      streamedWordsCount = 0;
-      return;
+        if (!renderAutocueLine(res.translated, result.final, false, id, revision)) return;
+        speechEngine.speakArabic(res.translated);
+        addTranscriptRecord({
+          time: new Date().toLocaleTimeString('ar-EG'),
+          english: result.final,
+          arabic: res.translated
+        });
+        socketClient.broadcastSubtitle({
+          original: result.final, translated: res.translated,
+          isInterim: false, segmentId: id, revision
+        });
+      }).catch(() => {
+        if (version === sessionVersion) showSessionStatus('تعذرت ترجمة العبارة. حاول مجدداً.', true);
+      });
     }
 
-    // أثناء الكلام الحي: ترجمة فورية ونطق كل 3 كلمات أو عند الفواصل
-    const newWords = totalWords - streamedWordsCount;
-    const currentSlice = words.slice(streamedWordsCount).join(' ');
-    const hasPunctuation = /[,.!?;]/.test(currentSlice) && newWords >= 2;
-
-    if (newWords >= 3 || hasPunctuation) {
-      const chunkWords = words.slice(streamedWordsCount, totalWords).join(' ');
-      streamedWordsCount = totalWords;
-
-      if (chunkWords.trim().length > 1) {
-        const trans = await translator.translate(chunkWords, 'en', 'ar');
-        if (trans.translated && trans.translated !== lastSpokenText) {
-          lastSpokenText = trans.translated;
-          speechEngine.speakArabic(trans.translated);
+    if (result.interim) {
+      const id = segmentId();
+      interimDebounceTimer = setTimeout(async () => {
+        try {
+          const temp = await translator.translate(result.interim, 'en', 'ar');
+          await finalQueue;
+          if (version !== sessionVersion || revision !== draftRevision || !speechEngine.isListening || temp.engine === 'failed') return;
+          renderAutocueLine(temp.translated, result.interim, true, id, revision);
+          socketClient.broadcastSubtitle({
+            original: result.interim, translated: temp.translated,
+            isInterim: true, segmentId: id, revision
+          });
+        } catch (_) {
+          if (version === sessionVersion && revision === draftRevision) showSessionStatus('تعذرت ترجمة النص الأولي. بانتظار العبارة المكتملة.', true);
         }
-      }
+      }, 180);
     }
+    return finalQueue;
   }
 
   // إعداد محرك الصوت
   const speechEngine = new SpeechEngine({
     onSpeakingState: (isSpeaking) => {
-      const pill = document.getElementById('earphone-mode-pill');
-      const label = document.getElementById('earphone-status-label');
-      if (isSpeaking) {
-        if (pill) pill.classList.add('speaking');
-        if (label) label.textContent = '🔊 ينطق الترجمة العربية في سماعتك الآن...';
-      } else {
-        if (pill) pill.classList.remove('speaking');
-        if (label) label.textContent = '🎧 وضع سماعة الأذن: المايك يستمع للإنجليزي ➔ ينطق الترجمة في سماعتك';
-      }
+      btnToggleVoice.classList.toggle('speaking', isSpeaking);
     },
     onStatusChange: (status) => {
       if (status === 'listening') {
         btnMainListen.classList.add('listening');
         listenText.textContent = 'إيقاف الاستماع';
         soundWave.classList.add('active');
+        showSessionStatus('يستمع الآن · النص يتحدث تلقائياً والصوت بعد اكتمال العبارة');
       } else {
         btnMainListen.classList.remove('listening');
         listenText.textContent = 'بدء الاستماع والترجمة';
         soundWave.classList.remove('active');
+        const errors = { permission_denied: 'اسمح بالوصول للمايك من إعدادات المتصفح ثم حاول مجدداً.', network_error: 'انقطع التعرف على الصوت. تحقق من الإنترنت.', microphone_error: 'لم يُعثر على مايك متاح. تحقق من توصيله وإعداداته.', unsupported: 'التعرف على الصوت غير متاح. استخدم Chrome أو Safari.' };
+        if (errors[status]) invalidatePendingTranslations();
+        showSessionStatus(errors[status] || 'المايك متوقف · يمكنك استقبال ترجمة الغرفة', !!errors[status]);
       }
+      btnMainListen.setAttribute('aria-pressed', String(status === 'listening'));
     },
     onAudioActivity: (active) => {
       if (active) {
@@ -243,76 +265,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         soundWave.classList.remove('active');
       }
     },
-    onResult: async (result) => {
-      // أثناء تحدث الضيف (Interim Line)
-      if (result.interim) {
-        clearTimeout(interimDebounceTimer);
-        interimDebounceTimer = setTimeout(async () => {
-          if (result.interim.length > 2) {
-            const temp = await translator.translate(result.interim, 'en', 'ar');
-            renderAutocueLine(temp.translated, result.interim, true);
-            
-            // بث مباشر لجهاز العميل
-            socketClient.broadcastSubtitle({
-              original: result.interim,
-              translated: temp.translated,
-              isInterim: true
-            });
-          }
-        }, 110);
-
-        // نطق صوتي فوري متدفق في السماعة فور خروج الكلمات من فم الضيف
-        processLiveStreamingVoice(result.interim, false);
-      }
-
-      // عند اكتمال الجملة (Final Line)
-      if (result.final) {
-        clearTimeout(interimDebounceTimer);
-
-        const res = await translator.translate(result.final, 'en', 'ar');
-        renderAutocueLine(res.translated, result.final, false);
-
-        // نطق الكلمات الأخيرة إن وجدت وتصفير المؤشر للجملة التالية
-        processLiveStreamingVoice(result.final, true);
-
-        // إضافة للسجل
-        addTranscriptRecord({
-          time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-          english: result.final,
-          arabic: res.translated
-        });
-
-        // بث الجملة لجميع المتصلين بالغرفة
-        socketClient.broadcastSubtitle({
-          original: result.final,
-          translated: res.translated,
-          isInterim: false
-        });
-      }
-    }
+    onResult: handleRecognitionResult
   });
 
-  // إعداد عميل WebSocket للغرفة
+  // Receivers update drafts silently and speak each committed segment once.
   const socketClient = new SocketClient({
     onSubtitle: (data) => {
-      renderAutocueLine(data.translated, data.original, data.isInterim);
-
-      if (data.isInterim) {
-        if (data.translated && data.translated !== lastSpokenText) {
-          lastSpokenText = data.translated;
-          speechEngine.speakArabic(data.translated);
-        }
-      } else {
+      if (typeof data.translated !== 'string' || typeof data.original !== 'string') return;
+      const id = data.segmentId || `legacy:${data.timestamp}:${data.original}`;
+      if (!renderAutocueLine(data.translated, data.original, data.isInterim, id, data.revision)) return;
+      if (!speechEngine.isListening) showSessionStatus('تستقبل ترجمة الغرفة · المايك متوقف');
+      if (!data.isInterim) {
+        speechEngine.speakArabic(data.translated);
         addTranscriptRecord({
           time: data.timestamp || new Date().toLocaleTimeString('ar-EG'),
-          english: data.original,
-          arabic: data.translated
+          english: data.original, arabic: data.translated
         });
       }
     },
     onRoomStatus: (data) => {
-      if (data.clientCount !== undefined) {
-        clientsCount.textContent = `${data.clientCount} متصل`;
+      if (data.clientCount !== undefined) clientsCount.textContent = `${data.clientCount} متصل`;
+      document.getElementById('connection-dot')?.classList.toggle('active', data.type !== 'disconnected');
+      if (data.type === 'disconnected') {
+        clientsCount.textContent = 'إعادة الاتصال…';
       }
     }
   });
@@ -331,7 +306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       engineBadge.style.color = '#34d399';
     } else {
       engineBadge.textContent = 'ذكاء اصطناعي تلقائي';
-      engineBadge.style.color = '#a78bfa';
+      engineBadge.style.color = '#38bdf8';
     }
   }
   updateEngineBadge();
@@ -339,12 +314,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   // زر بدء / إيقاف الاستماع
   btnMainListen.addEventListener('click', async () => {
     if (speechEngine.isListening) {
+      invalidatePendingTranslations();
       speechEngine.stop();
     } else {
+      btnMainListen.disabled = true;
       try {
+        invalidatePendingTranslations();
         await speechEngine.start();
       } catch (err) {
-        alert(err.message || 'حدث خطأ في تشغيل الميكروفون');
+        showSessionStatus(err.message || 'تعذر تشغيل الميكروفون', true);
+      } finally {
+        btnMainListen.disabled = false;
       }
     }
   });
@@ -353,6 +333,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnToggleVoice.addEventListener('click', () => {
     const newState = !speechEngine.voiceOutputEnabled;
     speechEngine.setVoiceOutput(newState);
+    const voiceAction = newState ? 'كتم الترجمة الصوتية' : 'تشغيل الترجمة الصوتية';
+    btnToggleVoice.setAttribute('aria-label', voiceAction);
+    btnToggleVoice.title = voiceAction;
+    btnToggleVoice.setAttribute('aria-pressed', String(newState));
 
     if (newState) {
       btnToggleVoice.className = 'voice-btn active';
@@ -371,19 +355,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnFontToggle.addEventListener('click', () => {
     currentFontIndex = (currentFontIndex + 1) % fontSizes.length;
     const nextSize = fontSizes[currentFontIndex];
-    liveArabic.style.fontSize = `${nextSize}px`;
+    autocueFeed.style.setProperty('--subtitle-size', `${nextSize}px`);
     btnFontToggle.querySelector('span').textContent = `A (${nextSize}px)`;
   });
 
   // مسح الشاشة الحالية
   btnClearScreen.addEventListener('click', () => {
+    invalidatePendingTranslations();
     if (autocueFeed) {
       autocueFeed.innerHTML = `
         <div class="autocue-line active" id="autocue-placeholder">
           <div class="line-arabic">تم مسح الشاشة. بانتظار تحدث الضيف...</div>
         </div>
       `;
-      currentAutocueLine = null;
       autocuePlaceholder = document.getElementById('autocue-placeholder');
     }
   });
@@ -392,14 +376,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (btnAutocueScroll) {
     btnAutocueScroll.addEventListener('click', () => {
       autoScrollEnabled = !autoScrollEnabled;
+      btnAutocueScroll.setAttribute('aria-pressed', String(autoScrollEnabled));
       btnAutocueScroll.classList.toggle('active', autoScrollEnabled);
       btnAutocueScroll.textContent = autoScrollEnabled ? 'تمرير تلقائي ✓' : 'تمرير يدوي ⏸';
-    });
-  }
-
-  if (btnAutocueClear) {
-    btnAutocueClear.addEventListener('click', () => {
-      btnClearScreen.click();
     });
   }
 
@@ -407,17 +386,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   function addTranscriptRecord(item) {
     if (emptyTranscriptMsg) emptyTranscriptMsg.style.display = 'none';
     transcriptHistory.push(item);
+    if (transcriptHistory.length > 150) {
+      transcriptHistory.shift();
+      transcriptItemsBox.lastElementChild?.remove();
+    }
 
     const div = document.createElement('div');
     div.className = 'transcript-entry';
     div.innerHTML = `
-      <div class="entry-time">${item.time}</div>
+      <div class="entry-time">${escapeHtml(item.time)}</div>
       <div class="entry-arabic">${escapeHtml(item.arabic)}</div>
       <div class="entry-english">${escapeHtml(item.english)}</div>
     `;
 
     transcriptItemsBox.insertBefore(div, transcriptItemsBox.firstChild);
-    localStorage.setItem(`turjuman_history_${roomId}`, JSON.stringify(transcriptHistory.slice(-150)));
+    try {
+      localStorage.setItem(`turjuman_history_${roomId}`, JSON.stringify(transcriptHistory));
+    } catch (_) {
+      showSessionStatus('السجل متاح لهذه الجلسة فقط؛ تعذر حفظه على الجهاز.', true);
+    }
   }
 
   // استرجاع السجل السابق إن وجد
@@ -426,7 +413,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const parsed = JSON.parse(savedHistory);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        parsed.forEach(item => addTranscriptRecord(item));
+        parsed.slice(-150).filter(item => item && typeof item.english === 'string' && typeof item.arabic === 'string' && typeof item.time === 'string').forEach(item => addTranscriptRecord(item));
       }
     } catch (e) {}
   }
@@ -434,14 +421,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   // نوافذ المودال: مشاركة الغرفة مع الهاتف
   const fullRoomUrl = `${window.location.origin}/room/${encodeURIComponent(roomId)}`;
   roomUrlInput.value = fullRoomUrl;
-  qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(fullRoomUrl)}`;
+
 
   btnShareRoom.addEventListener('click', () => {
-    shareModal.classList.add('open');
+    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(fullRoomUrl)}`;
+    shareModal.showModal();
   });
 
   closeShareModal.addEventListener('click', () => {
-    shareModal.classList.remove('open');
+    shareModal.close();
   });
 
   btnCopyLink.addEventListener('click', async () => {
@@ -454,13 +442,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnOpenSettings.addEventListener('click', () => {
     settingEngineSelect.value = translator.engine;
     geminiKeyInput.value = translator.getCustomApiKey();
-    speechSpeedRange.value = speechEngine.speechRate;
-    speechSpeedVal.textContent = `${speechEngine.speechRate}x`;
-    settingsModal.classList.add('open');
+    speechSpeedRange.value = speechEngine.baseRate;
+    speechSpeedVal.textContent = `${speechEngine.baseRate}x`;
+    settingSpeechLang.value = speechEngine.speechLang;
+    settingsModal.showModal();
   });
 
   closeSettingsModal.addEventListener('click', () => {
-    settingsModal.classList.remove('open');
+    settingsModal.close();
   });
 
   speechSpeedRange.addEventListener('input', () => {
@@ -470,19 +459,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnSaveSettings.addEventListener('click', () => {
     translator.setEngine(settingEngineSelect.value);
     translator.setCustomApiKey(geminiKeyInput.value);
-    speechEngine.speechRate = parseFloat(speechSpeedRange.value);
+    speechEngine.baseRate = parseFloat(speechSpeedRange.value);
+    invalidatePendingTranslations();
     speechEngine.setLanguage(settingSpeechLang.value);
     updateEngineBadge();
-    settingsModal.classList.remove('open');
+    settingsModal.close();
   });
 
   // نافذة سجل المحادثة
   btnOpenTranscript.addEventListener('click', () => {
-    transcriptModal.classList.add('open');
+    transcriptModal.showModal();
   });
 
   closeTranscriptModal.addEventListener('click', () => {
-    transcriptModal.classList.remove('open');
+    transcriptModal.close();
   });
 
   btnCopyTranscript.addEventListener('click', async () => {
@@ -508,7 +498,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnClearTranscript.addEventListener('click', () => {
     if (confirm('هل أنت متأكد من رغبتك في مسح السجل؟')) {
       transcriptHistory = [];
-      transcriptItemsBox.innerHTML = '<div class="empty-transcript">تم مسح السجل.</div>';
+      transcriptItemsBox.innerHTML = '<div class="empty-transcript" id="empty-transcript-msg">تم مسح السجل.</div>';
+      emptyTranscriptMsg = document.getElementById('empty-transcript-msg');
       localStorage.removeItem(`turjuman_history_${roomId}`);
     }
   });
@@ -516,7 +507,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // إغلاق النوافذ عند النقر على الخلفية المعتمة
   [shareModal, settingsModal, transcriptModal].forEach(modal => {
     modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.classList.remove('open');
+      if (e.target === modal) modal.close();
     });
   });
 

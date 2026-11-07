@@ -145,8 +145,6 @@
   max-height: 220px;
   overflow-y: auto;
   scroll-behavior: smooth;
-  mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
 }
 
 .zoomlive-autocue-track {
@@ -166,13 +164,13 @@
   background: rgba(255, 255, 255, 0.02);
   border-right: 3px solid rgba(255, 255, 255, 0.1);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  opacity: 0.45;
-  transform: scale(0.98);
+  opacity: 1;
+
 }
 
 .zoomlive-autocue-line.past {
-  opacity: 0.35;
-  transform: scale(0.96);
+  opacity: 1;
+
 }
 
 .zoomlive-autocue-line.active {
@@ -189,8 +187,8 @@
 
 /* الترجمة العربية الرئيسية */
 .zoomlive-arabic-text {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: var(--subtitle-size, 24px);
+  font-weight: 600;
   line-height: 1.45;
   color: #e2e8f0;
   direction: rtl;
@@ -200,10 +198,9 @@
 }
 
 .zoomlive-autocue-line.active .zoomlive-arabic-text {
-  font-size: 25px;
-  font-weight: 800;
+  font-size: var(--subtitle-size, 24px);
+  font-weight: 600;
   color: #38bdf8;
-  text-shadow: 0 2px 12px rgba(56, 189, 248, 0.45);
 }
 
 /* النص الإنجليزي الأصلي */
@@ -227,4 +224,9 @@
   border: 1px solid rgba(56, 189, 248, 0.3);
   margin-bottom: 4px;
   width: fit-content;
+}
+
+#zoomlive-ar-overlay-root :focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  #zoomlive-ar-overlay-root *, #zoomlive-ar-overlay-root { animation: none !important; transition: none !important; scroll-behavior: auto; }
 }

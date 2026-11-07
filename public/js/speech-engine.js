@@ -17,6 +17,10 @@ class SpeechEngine {
     this.arabicVoice = null;
     this.speechQueue = [];
     this.isSpeaking = false;
+    this.activeUtterance = null;
+    this.speechGeneration = 0;
+    this.starting = false;
+    this.terminalError = null;
     this.baseRate = 1.15; // سرعة ملائمة لمواكبة المتحدث البشري بدون تأخير
     this.wakeLock = null;
     
@@ -51,80 +55,51 @@ class SpeechEngine {
    */
   setVoiceOutput(enabled) {
     this.voiceOutputEnabled = enabled;
-    if (!enabled && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      this.speechQueue = [];
-      this.isSpeaking = false;
-      this.onSpeakingState(false);
+    if (!enabled) this.cancelSpeech();
+    else if ('speechSynthesis' in window) {
+      // This user gesture unlocks audio on mobile.
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
     }
   }
 
-  /**
-   * تحويل النص العربي المترجم فورياً إلى صوت في سماعة أذن العميل بدون أي تأخير
-   */
+  cancelSpeech() {
+    this.speechGeneration++;
+    this.speechQueue = [];
+    this.activeUtterance = null;
+    this.isSpeaking = false;
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    this.onSpeakingState(false);
+  }
+
   speakArabic(text) {
-    if (!this.voiceOutputEnabled || !text || !text.trim()) return;
-    if (!('speechSynthesis' in window)) return;
-
-    const trimmed = text.trim();
-
-    // فحص عدم تعليق المتصفح في النطق
-    if (!window.speechSynthesis.speaking && this.isSpeaking) {
-      this.isSpeaking = false;
-    }
-
-    // إضافة العبارة المتدفقة فورياً للطابور
-    if (this.speechQueue.length >= 4) {
-      this.speechQueue = [this.speechQueue.slice(0, 2).join('، '), trimmed];
-    } else {
-      this.speechQueue.push(trimmed);
-    }
-
+    if (!this.voiceOutputEnabled || !text?.trim() || !('speechSynthesis' in window)) return;
+    this.speechQueue.push(text.trim());
     this.processSpeechQueue();
   }
 
   processSpeechQueue() {
-    if (this.speechQueue.length === 0) {
-      this.isSpeaking = false;
-      this.onSpeakingState(false);
-      return;
-    }
-
-    // إذا كان المتصفح يتكلم حالياً ننتظر انتهاء العبارة الحالية
-    if (window.speechSynthesis.speaking) {
-      this.isSpeaking = true;
-      return;
-    }
-
+    if (!this.voiceOutputEnabled || this.activeUtterance || !this.speechQueue.length) return;
     const nextText = this.speechQueue.shift();
+    const generation = this.speechGeneration;
+    const utterance = new SpeechSynthesisUtterance(nextText);
+    this.activeUtterance = utterance;
     this.isSpeaking = true;
     this.onSpeakingState(true, nextText);
-
-    const utterance = new SpeechSynthesisUtterance(nextText);
     utterance.lang = 'ar-SA';
-    if (this.arabicVoice) {
-      utterance.voice = this.arabicVoice;
-    }
-
-    // سرعة فورية متكيفة لمنع أي بطء أو تراكم
-    const dynamicRate = this.speechQueue.length > 0 ? this.baseRate * 1.15 : this.baseRate;
-    utterance.rate = Math.min(dynamicRate, 1.35);
-    utterance.pitch = 1.0;
-
-    utterance.onend = () => {
+    if (this.arabicVoice) utterance.voice = this.arabicVoice;
+    utterance.rate = Math.min(this.baseRate * (this.speechQueue.length ? 1.1 : 1), 1.4);
+    utterance.pitch = 1;
+    const finish = () => {
+      if (generation !== this.speechGeneration || this.activeUtterance !== utterance) return;
+      this.activeUtterance = null;
       this.isSpeaking = false;
       this.onSpeakingState(false);
-      // الانتقال الفوري للعبارة القادمة خلال 10ms فقط
-      setTimeout(() => this.processSpeechQueue(), 10);
+      setTimeout(() => {
+        if (generation === this.speechGeneration) this.processSpeechQueue();
+      }, 10);
     };
-
-    utterance.onerror = (e) => {
-      console.warn('TTS utterance error:', e);
-      this.isSpeaking = false;
-      this.onSpeakingState(false);
-      setTimeout(() => this.processSpeechQueue(), 10);
-    };
-
+    utterance.onend = finish;
+    utterance.onerror = finish;
     window.speechSynthesis.speak(utterance);
   }
 
@@ -134,7 +109,9 @@ class SpeechEngine {
   async requestWakeLock() {
     if ('wakeLock' in navigator) {
       try {
-        this.wakeLock = await navigator.wakeLock.request('screen');
+        const lock = await navigator.wakeLock.request('screen');
+        if (!this.isListening) { await lock.release(); return; }
+        this.wakeLock = lock;
       } catch (err) {
         console.warn('Wake Lock request failed:', err);
       }
@@ -163,22 +140,29 @@ class SpeechEngine {
     this.recognition.maxAlternatives = 1;
     this.recognition.lang = this.speechLang;
 
+    const finalizedIndexes = new Set();
     this.recognition.onstart = () => {
-      this.isListening = true;
+      finalizedIndexes.clear();
+      if (!this.isListening) { this.recognition.abort(); return; }
       this.onStatusChange('listening');
     };
 
     this.recognition.onresult = (event) => {
+      if (!this.isListening) return;
       let interim = '';
       let final = '';
 
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
+      for (let i = 0; i < event.results.length; ++i) {
         if (event.results[i].isFinal) {
-          final += event.results[i][0].transcript;
+          if (i >= event.resultIndex && !finalizedIndexes.has(i)) {
+            finalizedIndexes.add(i);
+            final += ' ' + event.results[i][0].transcript;
+          }
         } else {
-          interim += event.results[i][0].transcript;
+          interim += ' ' + event.results[i][0].transcript;
         }
       }
+      if (!final.trim() && !interim.trim()) return;
 
       this.onAudioActivity(true);
       this.onResult({
@@ -190,11 +174,16 @@ class SpeechEngine {
 
     this.recognition.onerror = (event) => {
       console.warn('SpeechRecognition error:', event.error);
-      if (event.error === 'not-allowed') {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         this.isListening = false;
-        this.onStatusChange('permission_denied');
-      } else if (event.error === 'network') {
-        this.onStatusChange('network_error');
+        this.releaseWakeLock();
+        this.terminalError = 'permission_denied';
+        this.onStatusChange(this.terminalError);
+      } else if (['network', 'audio-capture', 'language-not-supported'].includes(event.error)) {
+        this.isListening = false;
+        this.releaseWakeLock();
+        this.terminalError = event.error === 'network' ? 'network_error' : event.error === 'audio-capture' ? 'microphone_error' : 'unsupported';
+        this.onStatusChange(this.terminalError);
       }
     };
 
@@ -211,7 +200,7 @@ class SpeechEngine {
             }
           }, 200);
         }
-      } else {
+      } else if (!this.terminalError) {
         this.onStatusChange('stopped');
       }
     };
@@ -221,42 +210,36 @@ class SpeechEngine {
    * بدء الاستماع والترجمة للسماعة
    */
   async start() {
-    // فتح قفل نظام الصوت في iOS و Safari لمنع حظر النطق التلقائي
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const unlock = new SpeechSynthesisUtterance('');
-      window.speechSynthesis.speak(unlock);
+    if (this.isListening || this.starting) return;
+    this.starting = true;
+    this.terminalError = null;
+    try {
+      if (!this.recognition) this.setupRecognition();
+      this.cancelSpeech();
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+      }
+      this.isListening = true;
+      this.recognition.lang = this.speechLang;
+      this.recognition.start();
+      this.requestWakeLock();
+    } catch (error) {
+      this.isListening = false;
+      this.releaseWakeLock();
+      throw error;
+    } finally {
+      this.starting = false;
     }
-
-    // منع قفل شاشة الهاتف
-    await this.requestWakeLock();
-
-    if (!this.recognition) {
-      this.setupRecognition();
-    }
-
-    this.isListening = true;
-    this.recognition.lang = this.speechLang;
-    this.recognition.start();
   }
 
-  /**
-   * إيقاف الاستماع
-   */
   stop() {
     this.isListening = false;
+    this.terminalError = null;
     this.releaseWakeLock();
     if (this.recognition) {
-      try {
-        this.recognition.stop();
-      } catch (e) {}
+      try { this.recognition.abort(); } catch (_) {}
     }
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      this.speechQueue = [];
-      this.isSpeaking = false;
-      this.onSpeakingState(false);
-    }
+    this.cancelSpeech();
     this.onStatusChange('stopped');
   }
 

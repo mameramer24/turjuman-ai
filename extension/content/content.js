@@ -22,6 +22,8 @@
   let captionsObserver = null;
   let recognition = null;
   let isListeningMic = false;
+  let micVersion = 0;
+  let micDraftTimer = null;
   const translator = new LiveTranslator();
 
   // 1. إنشاء واجهة شريط الترجمة العائم
@@ -82,14 +84,14 @@
     btnFontPlus.addEventListener('click', () => {
       if (currentFontSize < 40) {
         currentFontSize += 2;
-        arabicTextEl.style.fontSize = `${currentFontSize}px`;
+        overlayRoot.style.setProperty('--subtitle-size', `${currentFontSize}px`);
       }
     });
 
     btnFontMinus.addEventListener('click', () => {
       if (currentFontSize > 14) {
         currentFontSize -= 2;
-        arabicTextEl.style.fontSize = `${currentFontSize}px`;
+        overlayRoot.style.setProperty('--subtitle-size', `${currentFontSize}px`);
       }
     });
 
@@ -99,7 +101,8 @@
 
     btnClose.addEventListener('click', () => {
       overlayRoot.classList.add('zoomlive-hidden');
-      if (isListeningMic) stopMicListening();
+      if (isListeningMic) stopMicListening(false);
+      captionsObserver?.stop();
     });
 
     micBtnEl.addEventListener('click', () => {
@@ -173,8 +176,8 @@
 
         pipWin.document.body.innerHTML = `
           <div class="pip-badge">● ترجمة فورية طافية فوق الشاشة</div>
-          <div id="pip-arabic" class="pip-arabic">${arabicTextEl.textContent}</div>
-          <div id="pip-english" class="pip-english">${englishTextEl.textContent}</div>
+          <div id="pip-arabic" class="pip-arabic">${escapeHtml(arabicTextEl.textContent)}</div>
+          <div id="pip-english" class="pip-english">${escapeHtml(englishTextEl.textContent)}</div>
         `;
 
         window.__zoomlive_pip = pipWin;
@@ -191,6 +194,7 @@
 
   // 4. ميزة الاستماع المباشر للصوت
   function startMicListening() {
+    if (isListeningMic) return;
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRec) {
       alert('المتصفح لا يدعم SpeechRecognition');
@@ -198,40 +202,58 @@
     }
 
     try {
+      captionsObserver?.stop();
+      const version = ++micVersion;
+      let revision = 0, segment = 0;
+      let finalQueue = Promise.resolve();
+      const finalizedIndexes = new Set();
+      isListeningMic = true;
       recognition = new SpeechRec();
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
 
       recognition.onstart = () => {
-        isListeningMic = true;
+        finalizedIndexes.clear();
         micBtnEl.classList.add('active');
         micBtnEl.textContent = '⏹ إيقاف الاستماع';
         statusDotEl.classList.remove('inactive');
       };
 
-      recognition.onresult = async (e) => {
-        let interim = '';
-        let final = '';
-
-        for (let i = e.resultIndex; i < e.results.length; ++i) {
-          if (e.results[i].isFinal) {
-            final += e.results[i][0].transcript;
-          } else {
-            interim += e.results[i][0].transcript;
-          }
+      recognition.onresult = (event) => {
+        if (!isListeningMic || version !== micVersion) return;
+        let interim = '', final = '';
+        for (let i = 0; i < event.results.length; i++) {
+          const item = event.results[i];
+          if (item.isFinal) {
+            if (i >= event.resultIndex && !finalizedIndexes.has(i)) {
+              finalizedIndexes.add(i);
+              final += ' ' + item[0].transcript;
+            }
+          } else interim += ' ' + item[0].transcript;
         }
-
-        if (interim) {
-          englishTextEl.textContent = interim;
-          const fastAr = await translator.translate(interim, 'en', 'ar');
-          updateSubtitle({ arabic: fastAr, english: interim, isInterim: true });
-        }
-
+        interim = interim.trim();
+        final = final.trim();
+        const currentRevision = ++revision;
+        clearTimeout(micDraftTimer);
         if (final) {
-          englishTextEl.textContent = final;
-          const finalAr = await translator.translate(final, 'en', 'ar');
-          updateSubtitle({ arabic: finalAr, english: final, isInterim: false });
+          const id = `mic:${version}:${segment++}`;
+          const translated = translator.translate(final, 'en', 'ar');
+          finalQueue = finalQueue.then(async () => {
+            const arabic = await translated;
+            if (!isListeningMic || version !== micVersion) return;
+            if (!arabic) { statusDotEl.classList.add('inactive'); return; }
+            updateSubtitle({ arabic, english: final, isInterim: false, segmentId: id, revision: currentRevision });
+          }).catch(() => {});
+        }
+        if (interim) {
+          const id = `mic:${version}:${segment}`;
+          micDraftTimer = setTimeout(async () => {
+            const arabic = await translator.translate(interim, 'en', 'ar');
+            await finalQueue;
+            if (!arabic || !isListeningMic || version !== micVersion || currentRevision !== revision) return;
+            updateSubtitle({ arabic, english: interim, isInterim: true, segmentId: id, revision: currentRevision });
+          }, 180);
         }
       };
 
@@ -253,20 +275,28 @@
 
       recognition.start();
     } catch (e) {
+      stopMicListening();
       alert('تعذر تشغيل الميكروفون: ' + e.message);
     }
   }
 
-  function stopMicListening() {
+  function stopMicListening(resumeCaptions = true) {
     isListeningMic = false;
+    micVersion++;
+    clearTimeout(micDraftTimer);
     if (recognition) {
-      try { recognition.stop(); } catch (e) {}
+      const active = recognition;
       recognition = null;
+      active.onend = null;
+      active.onresult = null;
+      active.onstart = null;
+      try { active.stop(); } catch (e) {}
     }
     if (micBtnEl) {
       micBtnEl.classList.remove('active');
       micBtnEl.textContent = '🎙️ استماع للصوت';
     }
+    if (resumeCaptions) captionsObserver?.start();
   }
 
   // 5. دعم سحب الشريط بالماوس
@@ -311,64 +341,36 @@
   }
 
   // 6. تحديث نصوص الترجمة بنظام الأوتو كيو (عبارة بعبارة وسطر بسطر)
-  let currentOverlayLine = null;
-  let overlayPlaceholder = null;
+  const overlayLines = new Map();
+  let captionNumber = 0;
 
   function updateSubtitle(data) {
     if (!overlayRoot) createOverlay();
-    overlayRoot.classList.remove('zoomlive-hidden');
-
+    const id = data.segmentId || `caption:${captionNumber++}`;
+    let record = overlayLines.get(id);
+    if (record && (record.final || (data.revision || 0) < record.revision)) return;
     const track = document.getElementById('zoomlive-autocue-track');
     const viewport = document.getElementById('zoomlive-autocue-viewport');
-    overlayPlaceholder = document.getElementById('zoomlive-placeholder-line');
-
-    if (overlayPlaceholder) {
-      overlayPlaceholder.remove();
-      overlayPlaceholder = null;
+    document.getElementById('zoomlive-placeholder-line')?.remove();
+    if (!record) {
+      record = { element: document.createElement('div') };
+      overlayLines.set(id, record);
+      track?.appendChild(record.element);
     }
-
-    if (statusDotEl) statusDotEl.classList.remove('inactive');
-
-    // نمط الأوتو كيو: عرض سطر بسطر متدفق
-    if (data.isInterim) {
-      if (!currentOverlayLine) {
-        currentOverlayLine = document.createElement('div');
-        currentOverlayLine.className = 'zoomlive-autocue-line active interim';
-        currentOverlayLine.innerHTML = `
-          <div class="zoomlive-arabic-text" style="font-size: ${currentFontSize}px;">${escapeHtml(data.arabic || '')}</div>
-          <div class="zoomlive-english-text">${escapeHtml(data.english || '')}</div>
-        `;
-        if (track) track.appendChild(currentOverlayLine);
-      } else {
-        const ar = currentOverlayLine.querySelector('.zoomlive-arabic-text');
-        const en = currentOverlayLine.querySelector('.zoomlive-english-text');
-        if (ar && data.arabic) ar.textContent = data.arabic;
-        if (en && data.english) en.textContent = data.english;
-      }
-    } else {
-      if (!currentOverlayLine) {
-        currentOverlayLine = document.createElement('div');
-        currentOverlayLine.className = 'zoomlive-autocue-line active';
-        if (track) track.appendChild(currentOverlayLine);
-      }
-
-      currentOverlayLine.className = 'zoomlive-autocue-line active';
-      currentOverlayLine.innerHTML = `
-        <div class="zoomlive-arabic-text" style="font-size: ${currentFontSize}px;">${escapeHtml(data.arabic || '')}</div>
-        <div class="zoomlive-english-text">${escapeHtml(data.english || '')}</div>
-      `;
-
-      const prevLine = currentOverlayLine;
-      currentOverlayLine = null;
-
-      setTimeout(() => {
-        if (prevLine) {
-          prevLine.classList.remove('active');
-          prevLine.classList.add('past');
-        }
-      }, 1000);
+    record.final = !data.isInterim;
+    record.revision = data.revision || 0;
+    record.element.className = `zoomlive-autocue-line active${data.isInterim ? ' interim' : ''}`;
+    record.element.innerHTML = `
+      <div class="zoomlive-arabic-text">${escapeHtml(data.arabic || '')}</div>
+      <div class="zoomlive-english-text">${escapeHtml(data.english || '')}</div>
+    `;
+    arabicTextEl = record.element.querySelector('.zoomlive-arabic-text');
+    englishTextEl = record.element.querySelector('.zoomlive-english-text');
+    if (overlayLines.size > 200) {
+      const oldest = overlayLines.keys().next().value;
+      overlayLines.get(oldest).element.remove();
+      overlayLines.delete(oldest);
     }
-
     if (viewport) {
       viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
     }
@@ -438,6 +440,10 @@
     if (message.type === 'TOGGLE_OVERLAY') {
       if (!overlayRoot) createOverlay();
       overlayRoot.classList.toggle('zoomlive-hidden');
+      if (overlayRoot.classList.contains('zoomlive-hidden')) {
+        stopMicListening(false);
+        captionsObserver?.stop();
+      } else captionsObserver?.start();
       sendResponse({ status: 'ok', hidden: overlayRoot.classList.contains('zoomlive-hidden') });
     } else if (message.type === 'START_LIVE_PIP') {
       if (!overlayRoot) createOverlay();
@@ -448,11 +454,13 @@
       startMicListening();
       sendResponse({ status: 'ok' });
     } else if (message.type === 'NEW_SUBTITLE') {
+      if (isListeningMic) stopMicListening(false);
+      captionsObserver?.stop();
       updateSubtitle({
         arabic: message.translated,
         english: message.original,
         speaker: message.speaker,
-        isInterim: message.isInterim
+        isInterim: message.isInterim, segmentId: message.segmentId, revision: message.revision
       });
       sendResponse({ status: 'ok' });
     }

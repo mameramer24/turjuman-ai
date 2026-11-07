@@ -1,110 +1,81 @@
-/**
- * وحدة الذكاء الاصطناعي للترجمة الفورية (Gemini AI + المحرك العصبي السريع)
- * مصممة لأقصى سرعة ممكنة (Latency < 80ms) وأعلى دقة لغوية لاجتماعات زوم
- */
-
+/** Translation requests share results, use bounded retries, and report failure honestly. */
 class AITranslator {
   constructor() {
     this.cache = new Map();
-    this.engine = localStorage.getItem('turjuman_engine') || 'auto'; // 'auto' | 'gemini' | 'instant'
+    this.engine = localStorage.getItem('turjuman_engine') || 'auto';
     this.customApiKey = localStorage.getItem('turjuman_gemini_key') || '';
     this.pendingRequests = new Map();
+    this.configVersion = 0;
   }
 
   setEngine(engine) {
     this.engine = engine;
+    this.configVersion++;
     localStorage.setItem('turjuman_engine', engine);
   }
 
   setCustomApiKey(key) {
     this.customApiKey = key.trim();
+    this.configVersion++;
     localStorage.setItem('turjuman_gemini_key', this.customApiKey);
   }
 
-  getCustomApiKey() {
-    return this.customApiKey;
+  getCustomApiKey() { return this.customApiKey; }
+
+  async requestJSON(url, options = {}, timeout = 15000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      if (!response.ok) throw new Error(`Translation HTTP ${response.status}`);
+      return await response.json();
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
-  /**
-   * ترجمة الجملة فورياً مع نظام سباق السرعة (Fast Racing Fallback)
-   */
   async translate(text, from = 'en', to = 'ar') {
     const trimmed = text.trim();
     if (!trimmed) return { translated: '', engine: 'none' };
-
-    const cacheKey = `${this.engine}:${from}:${to}:${trimmed}`;
-    if (this.cache.has(cacheKey)) {
-      return { translated: this.cache.get(cacheKey), cached: true, engine: this.engine };
-    }
-
-    if (this.pendingRequests.has(cacheKey)) {
-      return this.pendingRequests.get(cacheKey);
-    }
-
-    const fetchPromise = (async () => {
-      // مؤقت إحباط للشبكة في حال بطء السيرفر لضمان سرعة الصوت
-      const controller = new AbortController();
-      const timeoutTimer = setTimeout(() => controller.abort(), 950);
-
+    const cacheKey = `${this.configVersion}:${this.engine}:${from}:${to}:${trimmed}`;
+    if (this.cache.has(cacheKey)) return { ...this.cache.get(cacheKey), cached: true };
+    if (this.pendingRequests.has(cacheKey)) return this.pendingRequests.get(cacheKey);
+    const request = (async () => {
+      let result;
       try {
-        const response = await fetch('/api/translate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify({
-            text: trimmed,
-            from,
-            to,
-            engine: this.engine,
-            apiKey: this.customApiKey
-          })
+        const data = await this.requestJSON('/api/translate', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: trimmed, from, to, engine: this.engine, apiKey: this.customApiKey })
         });
-
-        clearTimeout(timeoutTimer);
-
-        if (!response.ok) {
-          throw new Error(`API status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const result = data.translated || trimmed;
-
-        this.cache.set(cacheKey, result);
-        return {
-          translated: result,
-          engine: data.engine || this.engine,
-          cached: false
-        };
-      } catch (err) {
-        clearTimeout(timeoutTimer);
-        // في حال أي بطء أو انقطاع، يتم التحويل الفوري المباشر من المتصفح لمنع أي تأخير في السماعة
-        return this.clientSideFallback(trimmed, from, to);
-      } finally {
-        this.pendingRequests.delete(cacheKey);
+        if (typeof data.translated !== 'string' || !data.translated.trim()) throw new Error('Empty translation');
+        result = { translated: data.translated.trim(), engine: data.engine || this.engine };
+      } catch (_) {
+        result = await this.clientSideFallback(trimmed, from, to);
       }
+      if (result.engine !== 'failed') {
+        this.cache.set(cacheKey, result);
+        if (this.cache.size > 1000) this.cache.delete(this.cache.keys().next().value);
+      }
+      return result;
     })();
-
-    this.pendingRequests.set(cacheKey, fetchPromise);
-    return fetchPromise;
+    this.pendingRequests.set(cacheKey, request);
+    try { return await request; }
+    finally { this.pendingRequests.delete(cacheKey); }
   }
 
-  /**
-   * محرك الترجمة المباشر فائق السرعة من المتصفح (Zero Server Lag)
-   */
   async clientSideFallback(text, from, to) {
+    const query = `sl=${encodeURIComponent(from)}&tl=${encodeURIComponent(to)}&q=${encodeURIComponent(text)}`;
     try {
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(from)}&tl=${encodeURIComponent(to)}&dt=t&q=${encodeURIComponent(text)}`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json && Array.isArray(json[0])) {
-        const trans = json[0].map(item => item[0] || '').join('').trim();
-        return { translated: trans, engine: 'ultra_fast_client' };
-      }
-    } catch (e) {
-      console.warn('Fallback error:', e);
-    }
-    return { translated: text, engine: 'failed' };
+      const data = await this.requestJSON(`https://clients5.google.com/translate_a/t?client=dict-chrome-ex&${query}`, {}, 3000);
+      const translated = typeof data?.[0] === 'string' ? data[0] : data?.[0]?.[0];
+      if (typeof translated === 'string' && translated.trim()) return { translated: translated.trim(), engine: 'instant_fallback' };
+    } catch (_) {}
+    try {
+      const data = await this.requestJSON(`https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&${query}`, {}, 3000);
+      const translated = Array.isArray(data?.[0]) ? data[0].map(item => item?.[0] || '').join('').trim() : '';
+      if (translated) return { translated, engine: 'instant_fallback' };
+    } catch (_) {}
+    return { translated: '', engine: 'failed' };
   }
 }
-
 window.AITranslator = AITranslator;
