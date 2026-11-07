@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>استوديو الترجمة الفورية لاجتماعات زوم | ZoomLive AR Studio</title>
+  <link rel="stylesheet" href="studio.css">
+</head>
+<body>
+  <div class="studio-container">
+    <!-- الشريط العلوي الرئيسي -->
+    <header class="studio-header">
+      <div class="header-brand">
+        <div class="brand-icon">
+          <img src="../icons/icon-48.png" alt="ZoomLive AR" width="36" height="36">
+        </div>
+        <div>
+          <h1>استوديو الترجمة الفورية للاجتماعات</h1>
+          <p class="brand-tagline">التقاط حديث الضيف بالإنجليزية وعرضه فورياً بالعربية أولاً بأول</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btn-toggle-pip" class="btn btn-secondary">
+          <span class="icon">⧉</span>
+          فتح النافذة العائمة فوق الشاشة (Always on Top)
+        </button>
+        <button id="btn-toggle-listen" class="btn btn-primary">
+          <span class="status-indicator" id="listen-indicator"></span>
+          <span id="listen-btn-text">بدء الاستماع والترجمة</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- لوحة العرض المباشر الحالية -->
+    <section class="live-card">
+      <div class="live-card-header">
+        <div class="live-status">
+          <span class="badge" id="speech-status">في وضع الاستعداد</span>
+          <span class="lang-tag">English ➔ العربية</span>
+        </div>
+        <div class="audio-visualizer" id="visualizer" title="مؤشر استقبال الصوت">
+          <div class="bar"></div>
+          <div class="bar"></div>
+          <div class="bar"></div>
+          <div class="bar"></div>
+          <div class="bar"></div>
+        </div>
+      </div>
+
+      <div class="subtitles-display">
+        <!-- الترجمة العربية المباشرة -->
+        <div class="current-arabic" id="current-arabic">
+          اضغط على «بدء الاستماع والترجمة» ثم افتح الزوم ودع الضيف يتحدث!
+        </div>
+        <!-- النص الإنجليزي الملتقط -->
+        <div class="current-english" id="current-english">
+          (Original spoken English speech will appear here)
+        </div>
+      </div>
+    </section>
+
+    <!-- شريط الإعدادات السريعة -->
+    <section class="settings-strip">
+      <div class="setting-item">
+        <label for="input-source">مصدر الصوت:</label>
+        <select id="input-source">
+          <option value="default">الميكروفون الافتراضي / صوت السماعات</option>
+        </select>
+      </div>
+
+      <div class="setting-item">
+        <label for="font-size-slider">حجم خط الترجمة:</label>
+        <input type="range" id="font-size-slider" min="18" max="36" value="24">
+        <span id="font-size-val">24px</span>
+      </div>
+
+      <div class="setting-item">
+        <label for="speech-lang">لغة المتحدث:</label>
+        <select id="speech-lang">
+          <option value="en-US">الإنجليزية (الولايات المتحدة الأمريكية - US)</option>
+          <option value="en-GB">الإنجليزية (بريطانيا - UK)</option>
+          <option value="en-AU">الإنجليزية (أستراليا - AU)</option>
+          <option value="en-IN">الإنجليزية (الهند - IN)</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- سجل المحادثة وتاريخ الاجتماع -->
+    <section class="transcript-section">
+      <div class="section-header">
+        <h2>سجل ما قيل في الاجتماع (Transcript Log)</h2>
+        <div class="transcript-actions">
+          <button id="btn-copy-all" class="btn btn-sm">نسخ النص كاملاً</button>
+          <button id="btn-download-txt" class="btn btn-sm">تحميل كملف نصي (.txt)</button>
+          <button id="btn-clear-history" class="btn btn-sm btn-danger">مسح السجل</button>
+        </div>
+      </div>
+
+      <div class="transcript-list" id="transcript-list">
+        <div class="empty-state" id="empty-state">
+          لم يتم التقاط أي جمل حتى الآن. عند تحدث الضيف، ستظهر جميع الجمل المترجمة هنا مرتبة بالوقت.
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="../utils/translator.js"></script>
+  <script src="studio.js"></script>
+</body>
+</html>

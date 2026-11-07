@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ترجمان AI | الترجمة الفورية بالصوت للاجتماعات</title>
+  
+  <!-- PWA & Mobile Web App Meta -->
+  <meta name="description" content="تطبيق ويب ذكي للترجمة الفورية للاجتماعات (Zoom, Google Meet) باللغة العربية مع الصوت المباشر">
+  <meta name="theme-color" content="#090d16">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ترجمان AI">
+  
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- الشريط العلوي للهاتف والكمبيوتر -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-logo">
+          <img src="/icons/icon-192.png" alt="ترجمان AI" width="38" height="38">
+        </div>
+        <div>
+          <h1 class="brand-title">ترجمان AI</h1>
+          <span class="brand-badge" id="engine-badge">محرك الذكاء الاصطناعي</span>
+        </div>
+      </div>
+
+      <div class="header-tools">
+        <button id="btn-share-room" class="tool-btn" title="مشاركة الغرفة مع العميل أو الهاتف">
+          <span class="icon">🔗</span>
+          <span class="btn-label">مشاركة الغرفة</span>
+        </button>
+        <button id="btn-open-settings" class="tool-btn" title="الإعدادات">
+          <span class="icon">⚙️</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- شريط معلومات الغرفة والمتصلين -->
+    <div class="room-bar" id="room-bar">
+      <div class="room-info">
+        <span class="status-dot active"></span>
+        <span id="room-display-name">الغرفة: عامة (مباشر)</span>
+      </div>
+      <div class="room-clients">
+        <span class="icon">👥</span>
+        <span id="clients-count">1 متصل</span>
+      </div>
+    </div>
+
+    <!-- بانر تثبيت PWA على الهاتف -->
+    <div class="pwa-install-banner" id="pwa-install-banner" style="display: none;">
+      <div class="pwa-banner-text">
+        <span>📲</span>
+        <span>ثبّت التطبيق على شاشة هاتفك لتشغيله بنقرة واحدة كأي تطبيق أصلي</span>
+      </div>
+      <button id="btn-pwa-install" class="btn-pwa-install">تثبيت الآن</button>
+    </div>
+    
+    <!-- إشعار تثبيت الآيفون -->
+    <div class="ios-install-hint" id="ios-install-hint" style="display: none;">
+      <span>💡 للتثبيت على الآيفون: اضغط زر المشاركة <strong style="color: #38bdf8;">⎋</strong> بالأسفل ثم اختر <strong style="color: #38bdf8;">«إضافة إلى الشاشة الرئيسية ＋»</strong></span>
+      <button id="close-ios-hint" style="background:none; border:none; color:#94a3b8; cursor:pointer;">✕</button>
+    </div>
+
+    <!-- بطاقة العرض المباشر (الشاشة الرئيسية للترجمة) -->
+    <main class="live-viewport">
+      <div class="viewport-header">
+        <div class="direction-tag">
+          <span class="lang-pill">English 🇺🇸</span>
+          <span class="arrow">➔</span>
+          <span class="lang-pill highlight">العربية 🇸🇦</span>
+        </div>
+        <div class="sound-wave" id="sound-wave" title="مؤشر التقاط الصوت">
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+        </div>
+      </div>
+
+      <!-- مؤشر وضع سماعة الأذن المتصلة للمترجم الفوري -->
+      <div class="earphone-mode-pill" id="earphone-mode-pill">
+        <span class="earphone-icon" id="earphone-icon">🎧</span>
+        <span class="earphone-label" id="earphone-status-label">وضع سماعة الأذن: المايك يستمع للإنجليزي ➔ ينطق الترجمة العربية في سماعتك</span>
+      </div>
+
+      <!-- منطقة الترجمة العربية البارزة -->
+      <div class="subtitles-container">
+        <div class="arabic-display-box" id="arabic-box">
+          <div class="arabic-text" id="live-arabic">
+            ضع الموبايل بجانب لابتوب الاجتماع، أو اضغط الزر بالأسفل للبدء بالاستماع والترجمة فورياً!
+          </div>
+        </div>
+
+        <!-- النص الأصلي بالإنجليزي -->
+        <div class="english-display-box" id="english-box">
+          <div class="english-text" id="live-english">
+            (Spoken English sentences will appear here)
+          </div>
+        </div>
+      </div>
+
+      <!-- زر التحكم في الترجمة الصوتية (النطق بالعربية للموبايل) -->
+      <div class="voice-toggle-wrapper">
+        <button id="btn-toggle-voice" class="voice-btn active" title="تشغيل أو كتم الصوت العربي">
+          <span class="voice-icon" id="voice-icon">🔊</span>
+          <div class="voice-text">
+            <strong>الترجمة الصوتية: مفعّلة</strong>
+            <small id="voice-status-hint">تسمع الترجمة بصوت عربي فوري عبر السماعات</small>
+          </div>
+        </button>
+      </div>
+    </main>
+
+    <!-- شريط التحكم السفلي للهواتف -->
+    <footer class="app-footer">
+      <div class="main-action-group">
+        <button id="btn-main-listen" class="btn-primary-listen">
+          <span class="mic-circle" id="mic-circle">
+            <span class="mic-icon">🎙️</span>
+          </span>
+          <span id="listen-text" class="listen-text">بدء الاستماع والترجمة</span>
+        </button>
+      </div>
+
+      <div class="footer-subactions">
+        <button id="btn-font-toggle" class="sub-btn" title="تغيير حجم الخط">
+          <span>A+</span>
+        </button>
+        <button id="btn-open-transcript" class="sub-btn" title="سجل المحادثة">
+          <span>📋 السجل</span>
+        </button>
+        <button id="btn-clear-screen" class="sub-btn" title="مسح الشاشة">
+          <span>🗑️ مسح</span>
+        </button>
+      </div>
+    </footer>
+
+    <!-- نافذة المشاركة والربط مع الهاتف عبر QR Code -->
+    <div class="modal-overlay" id="share-modal">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>مشاركة الاجتماع مع الموبايل أو العميل</h3>
+          <button class="close-modal-btn" id="close-share-modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-desc">
+            افتح هذا الرابط على هاتف العميل ليسمع ويقرأ الترجمة الفورية بالعربية متزامنة مع المتحدث في زوم:
+          </p>
+          <div class="qr-container" id="qr-container">
+            <img id="qr-img" src="" alt="QR Code" width="180" height="180">
+          </div>
+          <div class="link-copy-box">
+            <input type="text" id="room-url-input" readonly>
+            <button id="btn-copy-link" class="btn-copy">نسخ الرابط</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- نافذة الإعدادات -->
+    <div class="modal-overlay" id="settings-modal">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>إعدادات الترجمة والذكاء الاصطناعي</h3>
+          <button class="close-modal-btn" id="close-settings-modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="setting-row">
+            <label>محرك الترجمة:</label>
+            <select id="setting-engine-select">
+              <option value="auto">تلقائي (الذكاء الاصطناعي مع تسريع فوري)</option>
+              <option value="gemini">Google Gemini AI (الأدق للمصطلحات والمحادثات)</option>
+              <option value="instant">المحرك الفوري (فائق السرعة وبدون مفتاح)</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <label>مفتاح Google Gemini API (اختياري):</label>
+            <input type="password" id="gemini-key-input" placeholder="AIzaSy...">
+            <small class="hint-text">إذا تم إدخاله، سيتم استخدامه لترجمة الجمل بدقة فائقة وبفهم للسياق.</small>
+          </div>
+
+          <div class="setting-row">
+            <label>سرعة نطق الصوت العربي:</label>
+            <div class="range-wrapper">
+              <input type="range" id="speech-speed-range" min="0.9" max="1.3" step="0.05" value="1.1">
+              <span id="speech-speed-val">1.1x</span>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <label>لهجة إنجليزية المتحدث:</label>
+            <select id="setting-speech-lang">
+              <option value="en-US">الإنجليزية (الولايات المتحدة الأمريكية - US)</option>
+              <option value="en-GB">الإنجليزية (بريطانيا - UK)</option>
+              <option value="en-AU">الإنجليزية (أستراليا - AU)</option>
+              <option value="en-IN">الإنجليزية (الهند - IN)</option>
+            </select>
+          </div>
+
+          <button id="btn-save-settings" class="btn-save">حفظ الإعدادات</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- نافذة سجل المحادثات وتصدير الملاحظات -->
+    <div class="modal-overlay" id="transcript-modal">
+      <div class="modal-card modal-large">
+        <div class="modal-header">
+          <h3>سجل ما قيل في الاجتماع (Transcript)</h3>
+          <button class="close-modal-btn" id="close-transcript-modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="transcript-toolbar">
+            <button id="btn-copy-transcript" class="btn-sm">نسخ النص كاملاً</button>
+            <button id="btn-download-transcript" class="btn-sm">تنزيل كملف نصي</button>
+            <button id="btn-clear-transcript" class="btn-sm btn-danger">مسح السجل</button>
+          </div>
+          <div class="transcript-items-wrapper" id="transcript-items-box">
+            <div class="empty-transcript" id="empty-transcript-msg">السجل فارغ حالياً.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="/js/ai-translator.js"></script>
+  <script src="/js/speech-engine.js"></script>
+  <script src="/js/socket-client.js"></script>
+  <script src="/js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
+

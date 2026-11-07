@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>مترجم الشاشة الفوري</title>
+  <style>
+    body {
+      width: 320px;
+      margin: 0;
+      padding: 16px;
+      background: #090d16;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Cairo", Tahoma, sans-serif;
+      direction: rtl;
+      text-align: right;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 12px;
+    }
+    .header img {
+      border-radius: 6px;
+    }
+    .header h2 {
+      font-size: 15px;
+      margin: 0;
+      color: #38bdf8;
+    }
+    .btn {
+      width: 100%;
+      padding: 11px 12px;
+      border-radius: 10px;
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #1d4ed8, #1e40af);
+    }
+    .btn-pip {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    .btn-pip:hover {
+      background: rgba(56, 189, 248, 0.25);
+    }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.06);
+      color: #cbd5e1;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+    .hint {
+      font-size: 11px;
+      color: #94a3b8;
+      line-height: 1.45;
+      margin-top: 10px;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="../icons/icon-48.png" width="30" height="30" alt="Logo">
+    <div>
+      <h2>مترجم الشاشة الفوري (عربي)</h2>
+      <small style="color: #64748b; font-size: 11px;">YouTube • Zoom • Google Meet</small>
+    </div>
+  </div>
+
+  <button id="btn-toggle-overlay" class="btn btn-primary">
+    <span>🔲</span> إظهار شريط الترجمة على الفيديو الحالي
+  </button>
+
+  <button id="btn-open-pip" class="btn btn-pip">
+    <span>⧉</span> فتح نافذة طافية خارج المتصفح (Always on Top)
+  </button>
+
+  <button id="btn-open-studio" class="btn btn-secondary">
+    <span>🎙️</span> فتح استوديو الترجمة والصوت الكامل
+  </button>
+
+  <div class="hint">
+    💡 <strong>طريقة الاستخدام:</strong><br>
+    شغل فيديو يوتيوب أو اجتماع زوم واضغط على زر إظهار الشريط. سيبدأ بالترجمة الفورية مباشرة على الشاشة!
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
