@@ -19,8 +19,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // عناصر الواجهة
   const roomDisplayName = document.getElementById('room-display-name');
   const clientsCount = document.getElementById('clients-count');
-  const liveArabic = document.getElementById('live-arabic');
-  const liveEnglish = document.getElementById('live-english');
   const soundWave = document.getElementById('sound-wave');
   const btnMainListen = document.getElementById('btn-main-listen');
   const listenText = document.getElementById('listen-text');
@@ -29,6 +27,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const voiceStatusHint = document.getElementById('voice-status-hint');
   const btnFontToggle = document.getElementById('btn-font-toggle');
   const engineBadge = document.getElementById('engine-badge');
+
+  // عناصر ملقن النصوص (Autocue Elements)
+  const autocueViewport = document.getElementById('autocue-viewport');
+  const autocueFeed = document.getElementById('autocue-feed');
+  let autocuePlaceholder = document.getElementById('autocue-placeholder');
+  const btnAutocueScroll = document.getElementById('btn-autocue-scroll');
+  const btnAutocueClear = document.getElementById('btn-autocue-clear');
+  let currentAutocueLine = null;
+  let autoScrollEnabled = true;
 
   // نوافذ Modals
   const shareModal = document.getElementById('share-modal');
@@ -105,6 +112,60 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  // نظام ملقن النصوص المتدفق سطراً بسطر (Autocue / Teleprompter Feed)
+  function renderAutocueLine(arabic, english, isInterim) {
+    if (autocuePlaceholder) {
+      autocuePlaceholder.remove();
+      autocuePlaceholder = null;
+    }
+
+    if (isInterim) {
+      if (!currentAutocueLine) {
+        currentAutocueLine = document.createElement('div');
+        currentAutocueLine.className = 'autocue-line active interim new-entry';
+        currentAutocueLine.innerHTML = `
+          <div class="line-arabic">${escapeHtml(arabic)}</div>
+          <div class="line-english">${escapeHtml(english)}</div>
+        `;
+        autocueFeed.appendChild(currentAutocueLine);
+      } else {
+        const arEl = currentAutocueLine.querySelector('.line-arabic');
+        const enEl = currentAutocueLine.querySelector('.line-english');
+        if (arEl) arEl.textContent = arabic;
+        if (enEl) enEl.textContent = english;
+      }
+    } else {
+      if (!currentAutocueLine) {
+        currentAutocueLine = document.createElement('div');
+        currentAutocueLine.className = 'autocue-line active new-entry';
+        autocueFeed.appendChild(currentAutocueLine);
+      }
+
+      currentAutocueLine.className = 'autocue-line active';
+      currentAutocueLine.innerHTML = `
+        <div class="line-arabic">${escapeHtml(arabic)}</div>
+        <div class="line-english">${escapeHtml(english)}</div>
+      `;
+
+      const previousLine = currentAutocueLine;
+      currentAutocueLine = null;
+
+      setTimeout(() => {
+        if (previousLine) {
+          previousLine.classList.remove('active');
+          previousLine.classList.add('past');
+        }
+      }, 1200);
+    }
+
+    if (autoScrollEnabled && autocueViewport) {
+      autocueViewport.scrollTo({
+        top: autocueViewport.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  }
+
   // إعداد محرك الصوت
   const speechEngine = new SpeechEngine({
     onSpeakingState: (isSpeaking) => {
@@ -137,15 +198,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     },
     onResult: async (result) => {
-      // أثناء تحدث الضيف
+      // أثناء تحدث الضيف (Interim Line)
       if (result.interim) {
-        liveEnglish.textContent = result.interim;
         clearTimeout(interimDebounceTimer);
         interimDebounceTimer = setTimeout(async () => {
           if (result.interim.length > 2) {
             const temp = await translator.translate(result.interim, 'en', 'ar');
-            liveArabic.textContent = temp.translated;
-            liveArabic.style.opacity = '0.75';
+            renderAutocueLine(temp.translated, result.interim, true);
             
             // بث مباشر لجهاز العميل
             socketClient.broadcastSubtitle({
@@ -157,14 +216,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 110);
       }
 
-      // عند اكتمال الجملة
+      // عند اكتمال الجملة (Final Line)
       if (result.final) {
         clearTimeout(interimDebounceTimer);
-        liveEnglish.textContent = result.final;
 
         const res = await translator.translate(result.final, 'en', 'ar');
-        liveArabic.textContent = res.translated;
-        liveArabic.style.opacity = '1';
+        renderAutocueLine(res.translated, result.final, false);
 
         // نطق الترجمة بالعربية في السماعات إذا كان مفعلاً
         speechEngine.speakArabic(res.translated);
@@ -189,13 +246,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // إعداد عميل WebSocket للغرفة
   const socketClient = new SocketClient({
     onSubtitle: (data) => {
-      // تم استقبال ترجمة من جهاز آخر متصل بنفس الغرفة (مثل كمبيوتر اللابتوب في زوم)
-      liveArabic.textContent = data.translated;
-      liveArabic.style.opacity = data.isInterim ? '0.75' : '1';
-      liveEnglish.textContent = data.original;
+      renderAutocueLine(data.translated, data.original, data.isInterim);
 
       if (!data.isInterim) {
-        // نطق الترجمة الفورية عبر هاتف العميل
         speechEngine.speakArabic(data.translated);
 
         addTranscriptRecord({
@@ -272,9 +325,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // مسح الشاشة الحالية
   btnClearScreen.addEventListener('click', () => {
-    liveArabic.textContent = 'بانتظار بدء التحدث بالإنجليزية...';
-    liveEnglish.textContent = '(Waiting for speech...)';
+    if (autocueFeed) {
+      autocueFeed.innerHTML = `
+        <div class="autocue-line active" id="autocue-placeholder">
+          <div class="line-arabic">تم مسح الشاشة. بانتظار تحدث الضيف...</div>
+        </div>
+      `;
+      currentAutocueLine = null;
+      autocuePlaceholder = document.getElementById('autocue-placeholder');
+    }
   });
+
+  // أزرار التحكم في ملقن النصوص (Autocue Controls)
+  if (btnAutocueScroll) {
+    btnAutocueScroll.addEventListener('click', () => {
+      autoScrollEnabled = !autoScrollEnabled;
+      btnAutocueScroll.classList.toggle('active', autoScrollEnabled);
+      btnAutocueScroll.textContent = autoScrollEnabled ? 'تمرير تلقائي ✓' : 'تمرير يدوي ⏸';
+    });
+  }
+
+  if (btnAutocueClear) {
+    btnAutocueClear.addEventListener('click', () => {
+      btnClearScreen.click();
+    });
+  }
 
   // إضافة عنصر لسجل المحادثات
   function addTranscriptRecord(item) {

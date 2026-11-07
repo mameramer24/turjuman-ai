@@ -47,10 +47,14 @@
             <button class="zoomlive-btn zoomlive-btn-close" id="zoomlive-btn-close" title="إغلاق">✕</button>
           </div>
         </div>
-        <div class="zoomlive-body">
-          <div class="zoomlive-speaker-badge" id="zoomlive-speaker" style="display: none;">مباشر</div>
-          <div class="zoomlive-arabic-text" id="zoomlive-arabic">شغّل الفيديو في يوتيوب أو زوم، وستظهر الترجمة العربية فورياً هنا...</div>
-          <div class="zoomlive-english-text" id="zoomlive-english">(Waiting for speech / subtitles...)</div>
+        <div class="zoomlive-body" id="zoomlive-autocue-viewport">
+          <div class="zoomlive-autocue-track" id="zoomlive-autocue-track">
+            <div class="zoomlive-autocue-line active" id="zoomlive-placeholder-line">
+              <div class="zoomlive-speaker-badge" id="zoomlive-speaker" style="display: none;">مباشر</div>
+              <div class="zoomlive-arabic-text" id="zoomlive-arabic">شغّل الفيديو في يوتيوب أو زوم، وستظهر الترجمة العربية فورياً سطر بسطر بنظام الأوتو كيو...</div>
+              <div class="zoomlive-english-text" id="zoomlive-english">(Waiting for speech / subtitles...)</div>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -306,29 +310,70 @@
     }
   }
 
-  // 6. تحديث نصوص الترجمة في الشريط وفي النافذة الطافية
+  // 6. تحديث نصوص الترجمة بنظام الأوتو كيو (عبارة بعبارة وسطر بسطر)
+  let currentOverlayLine = null;
+  let overlayPlaceholder = null;
+
   function updateSubtitle(data) {
     if (!overlayRoot) createOverlay();
     overlayRoot.classList.remove('zoomlive-hidden');
 
-    if (data.arabic) {
-      arabicTextEl.textContent = data.arabic;
-      arabicTextEl.style.opacity = data.isInterim ? '0.75' : '1';
+    const track = document.getElementById('zoomlive-autocue-track');
+    const viewport = document.getElementById('zoomlive-autocue-viewport');
+    overlayPlaceholder = document.getElementById('zoomlive-placeholder-line');
+
+    if (overlayPlaceholder) {
+      overlayPlaceholder.remove();
+      overlayPlaceholder = null;
     }
 
-    if (data.english) {
-      englishTextEl.textContent = data.english;
+    if (statusDotEl) statusDotEl.classList.remove('inactive');
+
+    // نمط الأوتو كيو: عرض سطر بسطر متدفق
+    if (data.isInterim) {
+      if (!currentOverlayLine) {
+        currentOverlayLine = document.createElement('div');
+        currentOverlayLine.className = 'zoomlive-autocue-line active interim';
+        currentOverlayLine.innerHTML = `
+          <div class="zoomlive-arabic-text" style="font-size: ${currentFontSize}px;">${escapeHtml(data.arabic || '')}</div>
+          <div class="zoomlive-english-text">${escapeHtml(data.english || '')}</div>
+        `;
+        if (track) track.appendChild(currentOverlayLine);
+      } else {
+        const ar = currentOverlayLine.querySelector('.zoomlive-arabic-text');
+        const en = currentOverlayLine.querySelector('.zoomlive-english-text');
+        if (ar && data.arabic) ar.textContent = data.arabic;
+        if (en && data.english) en.textContent = data.english;
+      }
+    } else {
+      if (!currentOverlayLine) {
+        currentOverlayLine = document.createElement('div');
+        currentOverlayLine.className = 'zoomlive-autocue-line active';
+        if (track) track.appendChild(currentOverlayLine);
+      }
+
+      currentOverlayLine.className = 'zoomlive-autocue-line active';
+      currentOverlayLine.innerHTML = `
+        <div class="zoomlive-arabic-text" style="font-size: ${currentFontSize}px;">${escapeHtml(data.arabic || '')}</div>
+        <div class="zoomlive-english-text">${escapeHtml(data.english || '')}</div>
+      `;
+
+      const prevLine = currentOverlayLine;
+      currentOverlayLine = null;
+
+      setTimeout(() => {
+        if (prevLine) {
+          prevLine.classList.remove('active');
+          prevLine.classList.add('past');
+        }
+      }, 1000);
     }
 
-    if (data.speaker) {
-      speakerBadgeEl.textContent = data.speaker;
-      speakerBadgeEl.style.display = 'inline-block';
+    if (viewport) {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
     }
 
-    if (statusDotEl) {
-      statusDotEl.classList.remove('inactive');
-    }
-
+    // تحديث نافذة PiP الطافية
     if (window.__zoomlive_pip && !window.__zoomlive_pip.closed) {
       const pipDoc = window.__zoomlive_pip.document;
       const pipAr = pipDoc.getElementById('pip-arabic');
@@ -336,6 +381,12 @@
       if (pipAr && data.arabic) pipAr.textContent = data.arabic;
       if (pipEn && data.english) pipEn.textContent = data.english;
     }
+  }
+
+  function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
   }
 
   // 7. تكامل ذكي مع YouTube

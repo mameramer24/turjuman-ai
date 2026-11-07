@@ -136,26 +136,74 @@
   border-color: rgba(239, 68, 68, 1);
 }
 
-/* جسم الترجمة */
+/* جسم الترجمة بنظام الأوتو كيو المتدفق سطر بسطر */
 .zoomlive-body {
-  padding: 16px 20px;
+  padding: 14px 18px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  min-height: 80px;
+  min-height: 90px;
+  max-height: 220px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+}
+
+.zoomlive-autocue-track {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: flex-end;
+  min-height: 100%;
+}
+
+.zoomlive-autocue-line {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border-right: 3px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 0.45;
+  transform: scale(0.98);
+}
+
+.zoomlive-autocue-line.past {
+  opacity: 0.35;
+  transform: scale(0.96);
+}
+
+.zoomlive-autocue-line.active {
+  opacity: 1;
+  transform: scale(1);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(10, 15, 29, 0.6));
+  border-right: 4px solid #38bdf8;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.zoomlive-autocue-line.active.interim {
+  border-right-color: #10b981;
 }
 
 /* الترجمة العربية الرئيسية */
 .zoomlive-arabic-text {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
   line-height: 1.45;
-  color: #38bdf8;
-  text-shadow: 0 2px 10px rgba(56, 189, 248, 0.4), 0 0 2px #000;
+  color: #e2e8f0;
   direction: rtl;
   text-align: right;
   word-break: break-word;
   transition: all 0.2s ease;
+}
+
+.zoomlive-autocue-line.active .zoomlive-arabic-text {
+  font-size: 25px;
+  font-weight: 800;
+  color: #38bdf8;
+  text-shadow: 0 2px 12px rgba(56, 189, 248, 0.45);
 }
 
 /* النص الإنجليزي الأصلي */

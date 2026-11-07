@@ -93,18 +93,31 @@
         <span class="earphone-label" id="earphone-status-label">وضع سماعة الأذن: المايك يستمع للإنجليزي ➔ ينطق الترجمة العربية في سماعتك</span>
       </div>
 
-      <!-- منطقة الترجمة العربية البارزة -->
-      <div class="subtitles-container">
-        <div class="arabic-display-box" id="arabic-box">
-          <div class="arabic-text" id="live-arabic">
-            ضع الموبايل بجانب لابتوب الاجتماع، أو اضغط الزر بالأسفل للبدء بالاستماع والترجمة فورياً!
+      <!-- شاشة عرض الترجمة بنظام الأوتو كيو (Autocue / Teleprompter Display) -->
+      <div class="autocue-container" id="autocue-container">
+        <!-- شريط توجيه وتحكم الأوتو كيو -->
+        <div class="autocue-top-bar">
+          <div class="autocue-mode-tag">
+            <span class="autocue-live-dot"></span>
+            <span>ملقن النصوص المباشر (Autocue)</span>
+          </div>
+          <div class="autocue-controls">
+            <button id="btn-autocue-scroll" class="autocue-tool-btn active" title="تبديل التمرير التلقائي">تمرير تلقائي ✓</button>
+            <button id="btn-autocue-clear" class="autocue-tool-btn" title="مسح شاشة الملقن">مسح</button>
           </div>
         </div>
 
-        <!-- النص الأصلي بالإنجليزي -->
-        <div class="english-display-box" id="english-box">
-          <div class="english-text" id="live-english">
-            (Spoken English sentences will appear here)
+        <!-- منطقة التمرير العمودي المتدفق بنظام سطر بسطر -->
+        <div class="autocue-viewport" id="autocue-viewport">
+          <div class="autocue-feed" id="autocue-feed">
+            <div class="autocue-line active" id="autocue-placeholder">
+              <div class="line-arabic" id="live-arabic">
+                ضع الموبايل بجانب لابتوب الاجتماع، أو اضغط الزر بالأسفل لتبدأ الترجمة بالظهور سطراً بسطر بنظام الأوتو كيو...
+              </div>
+              <div class="line-english" id="live-english">
+                (Waiting for spoken English speech...)
+              </div>
+            </div>
           </div>
         </div>
       </div>

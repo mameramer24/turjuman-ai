@@ -286,49 +286,177 @@ body {
   50% { height: 18px; }
 }
 
-/* Subtitles Container */
-.subtitles-container {
+/* Autocue / Teleprompter Display Container */
+.autocue-container {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   background: var(--bg-card);
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-xl);
-  padding: 24px 20px;
+  padding: 16px 18px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 0 40px rgba(56, 189, 248, 0.03);
-  min-height: 220px;
-  gap: 16px;
+  min-height: 280px;
+  max-height: 420px;
+  position: relative;
+  overflow: hidden;
 }
 
-.arabic-display-box {
-  width: 100%;
+.autocue-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 6px;
+  z-index: 10;
 }
 
-.arabic-text {
-  font-size: 24px;
-  font-weight: 700;
+.autocue-mode-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.autocue-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8;
+  animation: wave 1.5s infinite;
+}
+
+.autocue-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.autocue-tool-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.autocue-tool-btn.active {
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+/* مساحة التمرير العمودي المتدفق مع تدرج حواف سينمائي للأوتو كيو */
+.autocue-viewport {
+  flex: 1;
+  position: relative;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  padding: 14px 6px 20px;
+  mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+}
+
+.autocue-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: flex-end;
+  min-height: 100%;
+}
+
+/* السطور والعبارات المتدفقة في الأوتو كيو */
+.autocue-line {
+  padding: 12px 16px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.02);
+  border-right: 3px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 0.45;
+  transform: scale(0.98);
+}
+
+.autocue-line.past {
+  opacity: 0.4;
+  transform: scale(0.96);
+  border-right-color: rgba(255, 255, 255, 0.08);
+}
+
+.autocue-line.past:hover {
+  opacity: 0.8;
+}
+
+/* السطر النشط المضاء حالياً (مكان حديث ونطق المترجم) */
+.autocue-line.active {
+  opacity: 1;
+  transform: scale(1);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.14), rgba(15, 23, 42, 0.6));
+  border-right: 4px solid #38bdf8;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35), 0 0 16px rgba(56, 189, 248, 0.2);
+}
+
+.autocue-line.active.interim {
+  border-right-color: #10b981;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35), 0 0 14px rgba(16, 185, 129, 0.25);
+}
+
+.autocue-line.new-entry {
+  animation: autocue-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes autocue-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.line-arabic {
+  font-size: 20px;
+  font-weight: 600;
   line-height: 1.5;
-  color: var(--cyan-glow);
-  text-shadow: 0 0 18px rgba(56, 189, 248, 0.3);
+  color: #e2e8f0;
   word-break: break-word;
-  transition: all 0.2s ease;
+  transition: all 0.2s;
 }
 
-.english-display-box {
-  width: 100%;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  padding-top: 12px;
+.autocue-line.active .line-arabic {
+  font-size: 25px;
+  font-weight: 800;
+  color: #38bdf8;
+  text-shadow: 0 0 16px rgba(56, 189, 248, 0.35);
 }
 
-.english-text {
-  font-size: 14px;
-  color: var(--text-secondary);
+.line-english {
+  font-size: 13px;
+  color: #94a3b8;
+  font-style: italic;
   direction: ltr;
   text-align: left;
-  line-height: 1.4;
-  font-style: italic;
+  line-height: 1.35;
   word-break: break-word;
+}
+
+.line-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #64748b;
+  margin-bottom: 2px;
 }
 
 /* Voice Toggle Button */
