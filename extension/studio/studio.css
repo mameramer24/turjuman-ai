@@ -24,7 +24,7 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Cairo", Tahoma, sans-serif;
+  font-family: 'IBM Plex Sans Arabic', 'IBM Plex Sans', sans-serif;
   background-color: var(--bg-main);
   color: var(--text-primary);
   min-height: 100vh;
@@ -371,3 +371,5 @@ body {
   color: var(--text-muted);
   font-size: 14px;
 }
+
+.current-english, .item-english { font-family: 'IBM Plex Sans', 'IBM Plex Sans Arabic', sans-serif; }

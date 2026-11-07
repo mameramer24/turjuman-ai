@@ -132,13 +132,18 @@
           height: 190
         });
 
+        const fontStyles = pipWin.document.createElement('link');
+        fontStyles.rel = 'stylesheet';
+        fontStyles.href = chrome.runtime.getURL('fonts/fonts.css');
+        pipWin.document.head.appendChild(fontStyles);
+
         const style = pipWin.document.createElement('style');
         style.textContent = `
           * { box-sizing: border-box; margin: 0; padding: 0; }
           body {
             background: #090d16;
             color: #f8fafc;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Cairo", Tahoma, sans-serif;
+            font-family: 'IBM Plex Sans Arabic', 'IBM Plex Sans', sans-serif;
             direction: rtl;
             text-align: right;
             padding: 16px;
@@ -164,6 +169,7 @@
             word-break: break-word;
           }
           .pip-english {
+            font-family: 'IBM Plex Sans', 'IBM Plex Sans Arabic', sans-serif;
             font-size: 13px;
             color: #94a3b8;
             font-style: italic;

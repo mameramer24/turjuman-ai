@@ -261,13 +261,18 @@ document.addEventListener('DOMContentLoaded', async () => {
           height: 190
         });
 
+        const fontStyles = pipWindow.document.createElement('link');
+        fontStyles.rel = 'stylesheet';
+        fontStyles.href = chrome.runtime.getURL('fonts/fonts.css');
+        pipWindow.document.head.appendChild(fontStyles);
+
         const style = pipWindow.document.createElement('style');
         style.textContent = `
           * { box-sizing: border-box; margin: 0; padding: 0; }
           body {
             background-color: #090d16;
             color: #f8fafc;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Cairo", Tahoma, sans-serif;
+            font-family: 'IBM Plex Sans Arabic', 'IBM Plex Sans', sans-serif;
             direction: rtl;
             text-align: right;
             padding: 16px;
@@ -293,6 +298,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             word-break: break-word;
           }
           .pip-english {
+            font-family: 'IBM Plex Sans', 'IBM Plex Sans Arabic', sans-serif;
             font-size: 13px;
             color: #94a3b8;
             font-style: italic;

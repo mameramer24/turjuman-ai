@@ -1,7 +1,16 @@
-const CACHE_NAME = 'turjuman-v3.0';
+const CACHE_NAME = 'turjuman-v3.1';
 const ASSETS = [
   '/',
   '/css/style.css',
+  '/fonts/fonts.css',
+  '/fonts/IBMPlexSans-Bold.woff2',
+  '/fonts/IBMPlexSans-Medium.woff2',
+  '/fonts/IBMPlexSans-Regular.woff2',
+  '/fonts/IBMPlexSans-SemiBold.woff2',
+  '/fonts/IBMPlexSansArabic-Bold.woff2',
+  '/fonts/IBMPlexSansArabic-Medium.woff2',
+  '/fonts/IBMPlexSansArabic-Regular.woff2',
+  '/fonts/IBMPlexSansArabic-SemiBold.woff2',
   '/js/app.js',
   '/js/ai-translator.js',
   '/js/speech-engine.js',

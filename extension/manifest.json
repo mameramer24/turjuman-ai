@@ -29,15 +29,29 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": [
+        "<all_urls>"
+      ],
       "js": [
         "utils/translator.js",
         "utils/captions-observer.js",
         "content/content.js"
       ],
-      "css": ["content/content.css"],
+      "css": [
+        "content/content.css"
+      ],
       "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "fonts/*.woff2",
+        "fonts/fonts.css"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }
-
